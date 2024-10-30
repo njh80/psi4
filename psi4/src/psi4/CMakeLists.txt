@@ -27,6 +27,7 @@ endforeach ()
 foreach(dir_name
   ambit_interface
   cc
+  ccsd-f12b
   cctransort
   dct
   detci
@@ -35,6 +36,7 @@ foreach(dir_name
   dfocc
   dlpno
   dmrg
+  f12
   fisapt
   fnocc
   mcscf
