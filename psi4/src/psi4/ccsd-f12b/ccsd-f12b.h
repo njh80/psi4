@@ -57,6 +57,10 @@ class CCSDF12B : public Wavefunction {
     /* Number of OMP_THREADS */
     int nthreads_;
 
+    /* Memory Allocated */
+    size_t memory_;
+    size_t double_memory_;
+
     /* Choose to compute CABS Singles correction */
     bool singles_;
 
@@ -130,6 +134,9 @@ class CCSDF12B : public Wavefunction {
 
     /* Total CCSD-F12b Energy */
     double E_ccsdf12b_ = 0.0;
+
+    /* Number of CCSD interations */
+    int iteration_ = 0;
 
     void common_init();
 
@@ -320,10 +327,10 @@ class CCSDF12B : public Wavefunction {
                                       const int& i, const int& j);
 
     /* Form the CCSD F12b correction to the CCSD and Hartree-Fock energy */
-    double form_CCSDF12B_Energy(einsums::Tensor<double, 4> *tau, einsums::Tensor<double, 2>  *t_ia);
+    void form_CCSDF12B_Energy(einsums::Tensor<double, 4> *tau, einsums::Tensor<double, 2>  *t_ia);
 
     /* Density fitted algorithm for the CCSD F12b correction to the CCSD and Hartree-Fock energy */
-    double form_CCSDF12B_Energy_df(einsums::Tensor<double, 4> *tau, einsums::Tensor<double, 2>  *t_ia, einsums::Tensor<double, 3> *J_inv_AB);
+    void form_CCSDF12B_Energy_df(einsums::Tensor<double, 4> *tau, einsums::Tensor<double, 2>  *t_ia, einsums::Tensor<double, 3> *J_inv_AB);
 
     /* Form the CCSD Energy Correction to Hartree Fock (E_ccsd_) */
     void form_CCSD_Energy(einsums::Tensor<double, 4> *G, einsums::Tensor<double, 4> *V, einsums::Tensor<double, 4> *tau);
@@ -411,6 +418,100 @@ class DiskCCSDF12B : public CCSDF12B {
                 einsums::DiskTensor<double, 2> *f, einsums::DiskTensor<double, 2> *fk,
                 einsums::DiskTensor<double, 2> *kk);
 
+
+    /* Form the $D^{kl}_{ab} Matrix from Werner */
+    virtual void form_D_Werner(einsums::DiskTensor<double, 4> *D, einsums::DiskTensor<double, 4> *tau,
+                               einsums::DiskTensor<double, 2> *t_i);
+    
+    /* Form an L^{kl}_{ab} matrix */
+    virtual void form_L(einsums::DiskTensor<double, 4> *L_oovv, einsums::DiskTensor<double, 4> *L_ooov, 
+                        einsums::DiskTensor<double, 4> *K);
+
+    /* Form $\beta^{kl}_{mn}$ tensor */
+    virtual void form_beta(einsums::DiskTensor<double, 2> *beta, einsums::DiskTensor<double, 2> *f, einsums::DiskTensor<double, 2> *t,
+                           einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 4> *L_oovv, einsums::DiskTensor<double, 4> *L_ooov);
+
+    /* Form the $A_{ab}$ tensor */                   
+    virtual void form_A(einsums::DiskTensor<double, 2> *A, einsums::DiskTensor<double, 4> *T, einsums::DiskTensor<double, 4> *L_oovv);
+
+    /* Form the $s^{i}_{a}$ tensor */
+    virtual void form_s(einsums::DiskTensor<double, 2> *s, einsums::DiskTensor<double, 4> *T_ijab, einsums::DiskTensor<double, 2> *f, 
+                        einsums::DiskTensor<double, 2> *t_ia, einsums::DiskTensor<double, 2> *A, einsums::DiskTensor<double, 4> *D,
+                        einsums::DiskTensor<double, 4> *K_pqrs, einsums::DiskTensor<double, 4> *L_ooov);
+
+    /* Form the $r^{k}_{a}$ tensor */
+    virtual void form_r(einsums::DiskTensor<double, 2> *r, einsums::DiskTensor<double, 2> *f, einsums::DiskTensor<double, 2> *t,
+                        einsums::DiskTensor<double, 4> *L_oovv);
+
+    /* Form the $v^{i}_{a}$ singles residual tensor */
+    virtual void form_v_ia(einsums::DiskTensor<double, 2> *v_ia, einsums::DiskTensor<double, 4> *T_ijab, einsums::DiskTensor<double, 2> *t,
+                           einsums::DiskTensor<double, 2> *beta, einsums::DiskTensor<double, 2> *r, einsums::DiskTensor<double, 2> *s);
+
+    /* Form the $X_{ab}$ matrix */
+    virtual void form_X_Werner(einsums::DiskTensor<double, 2> *X, einsums::DiskTensor<double, 2> *f, einsums::DiskTensor<double, 2> *t,
+                               einsums::DiskTensor<double, 2> *A, einsums::DiskTensor<double, 2> *r, einsums::DiskTensor<double, 4> *J,
+                               einsums::DiskTensor<double, 4> *K);
+
+    /* Form the $Y^{kl}_{ab}$ tensor */
+    virtual void form_Y_Werner(einsums::DiskTensor<double, 4> *Y, einsums::DiskTensor<double, 4> *taut, einsums::DiskTensor<double, 2> *f, 
+                               einsums::DiskTensor<double, 2> *t, einsums::DiskTensor<double, 4> *J, einsums::DiskTensor<double, 4> *K,
+                               einsums::DiskTensor<double, 4> *L_oovv, einsums::DiskTensor<double, 4> *L_ooov);
+
+    /* Form the $Z^{kj}_{ab}$ tensor */
+    virtual void form_Z_Werner(einsums::DiskTensor<double, 4> *Z, einsums::DiskTensor<double, 4> *taut, einsums::DiskTensor<double, 2> *t,
+                               einsums::DiskTensor<double, 4> *J, einsums::DiskTensor<double, 4> *K);
+
+    /* Form the $\alpha^{ij}_{mn}$ constant tensor */
+    virtual void form_alpha(einsums::DiskTensor<double, 4> *alpha, einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 2> *t,
+                            einsums::DiskTensor<double, 4> *K);
+
+    /* Form the G^{ij}_{ab} matrix */
+    virtual void form_G(einsums::DiskTensor<double, 4> *G, einsums::DiskTensor<double, 2> *s, einsums::DiskTensor<double, 2> *t,
+                        einsums::DiskTensor<double, 4> *D, einsums::DiskTensor<double, 2> *beta, einsums::DiskTensor<double, 4> *T_ijab, 
+                        einsums::DiskTensor<double, 2> *X, einsums::DiskTensor<double, 4> *Y, einsums::DiskTensor<double, 4> *Z, 
+                        einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 4> *K);
+
+    /* Form the $V^{ij}_{ab}$ doubles residual tensor */
+    virtual void form_V_ijab(einsums::DiskTensor<double, 4> *V_ijab, einsums::DiskTensor<double, 4> *G, einsums::DiskTensor<double, 4> *tau,
+                             einsums::DiskTensor<double, 4> *D, einsums::DiskTensor<double, 4> *alpha, einsums::DiskTensor<double, 4> *C,
+                             einsums::DiskTensor<double, 4> *FG, einsums::DiskTensor<double, 4> *K, einsums::DiskTensor<double, 4> *F);
+
+    /* Form the CCSD F12b correction to the CCSD and Hartree-Fock energy */
+    void form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 2>  *t_ia, einsums::DiskTensor<double, 4> *FG_pqrs, 
+                                einsums::DiskTensor<double, 4> *K_pqrs, einsums::DiskTensor<double, 4> *F_pqrs);
+
+    /* Form the CCSD Energy Correction to Hartree Fock (E_ccsd_) */
+    void form_CCSD_Energy(einsums::DiskTensor<double, 4> *G, einsums::DiskTensor<double, 4> *V, einsums::DiskTensor<double, 4> *tau);
+
+    /* Initialise amplitudes t_ia, T_ijab, T_ijkl */
+    void initialise_amplitudes(einsums::DiskTensor<double, 2> *t_ia, einsums::DiskTensor<double, 4> *T_ijab, 
+                               einsums::DiskTensor<double, 4> *V_ijab, einsums::DiskTensor<double, 4> *D_iajb);
+
+    /* Save the amplitudes between iterations */
+    void save_amplitudes(einsums::DiskTensor<double, 2> *t_ia_old, einsums::DiskTensor<double, 4> *T_ijab_old, einsums::DiskTensor<double, 2> *t_ia, 
+                         einsums::DiskTensor<double, 4> *T_ijab);
+
+    /* Update t_ia to be v_ia / D_ij */
+    void update_t1(einsums::DiskTensor<double, 2> *t_ia, einsums::DiskTensor<double, 2> *v_ia, einsums::DiskTensor<double, 2> *D_ia);
+    
+    /* Update T_ijkl to be -V_ikjl / D_ijkl */
+    void update_t2(einsums::DiskTensor<double, 4> *T_ijkl, einsums::DiskTensor<double, 4> *V_ikjl, einsums::DiskTensor<double, 4> *D_ijkl);
+
+    /* Form $\tau^{ij}_{ab}$ = $T^{ij}_{ab}$ + $t^{i}_{a}$ * $t^{j}_{b}$ */
+    void form_tau(einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 4> *T_ijab, einsums::DiskTensor<double, 2> *t_ia);
+
+    /* Form $\Tilde\tau^{ij}_{ab}$ = (0.5 * $T^{ij}_{ab}$) + $t^{i}_{a}$ * $t^{j}_{b}$ */
+    void form_taut(einsums::DiskTensor<double, 4> *taut, einsums::DiskTensor<double, 4> *T_ijab, einsums::DiskTensor<double, 2> *t_ia);
+
+    /* Form Amplitude Root Means Square Change*/
+    double get_root_mean_square_amplitude_change(einsums::DiskTensor<double, 2> *t_ia, einsums::DiskTensor<double, 4> *T_ijab, 
+                                                 einsums::DiskTensor<double, 2> *t_ia_old, einsums::DiskTensor<double, 4> *T_ijab_old);
+
+    /* Form the energy denominator */
+    virtual void form_D_ia(einsums::DiskTensor<double, 2> *D, einsums::DiskTensor<double, 2> *f);
+
+    /* Form the energy denominator */
+    virtual void form_D_ijab(einsums::DiskTensor<double, 4> *D, einsums::DiskTensor<double, 2> *f);
 
     /* Form the $T^{ij}_{ij}\Tilde{V}^{ij}_{ij}$ contirbution to the energy */
     std::pair<double, double> V_Tilde(einsums::Tensor<double, 2>& V_ij, einsums::DiskTensor<double, 4> *C,

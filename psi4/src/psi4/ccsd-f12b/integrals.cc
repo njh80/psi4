@@ -33,7 +33,7 @@ Imports
     einsums.hpp
         External header file for the einsums namespace, employs the Einstein summation convention akin to the numpy.einsum function in Python
         np.einsum('ij,jk->ik', A, B) -> einsums::einsum(Indices{i, k}, C, Indices{i, j}, A, Indices{j, k}, B)
-    psi4/libmints/*
+    psi4/libmints
         Various header files from the libmints library in the Psi4 package which contain the definitions for the BasisSet, OrbitalSpace, Integral, etc. classes
         These implement the molecular integrals and basis set manipulations
 
@@ -51,7 +51,7 @@ Functions
             FG: is F^hat_12 G^hat_12 #N.B. G -> coulomb i.e. 1/r_12# = <pq|f(r_12)/r_12|rs>
             F2: is F^hat_12^2 = <pq|f(r_12)^2|rs> 
             Uf: is F^hat_12 T^hat_1 F^hat_12 (Double Commutator, i.e. U = [f(r_12), [T_1, f(r_12)]])
-            J/K/Other == ERI: is the electron repulsion integral (i.e. coulomb only) <pq|r_12|rs>
+            J/K/Other == ERI: is the electron repulsion integral (i.e. coulomb only) <pq|1/r_12|rs>
         and stores them in the GAO tensor
         Uses the full space if bs1 and bs2 are the same, otherwise uses the unique shells
     three_index_ao_computer (Integral Type, Bpq Tensor, Basis Set Dimensions * 3)
@@ -996,14 +996,23 @@ void DiskCCSDF12B::form_teints(const std::string& int_type, einsums::DiskTensor<
     } else if ( int_type == "G" ) {
         order = {'o', 'O', 'o', 'O',
                  'o', 'O', 'o', 'C'};
-    } else if ( int_type == "J" ) {
+    } else if ( int_type == "Jf" ) {
         order = {'O', 'O', 'o', 'o',
                  'O', 'C', 'o', 'o',
                  'C', 'C', 'o', 'o'};
-    } else if ( int_type == "K" ) {
+    } else if ( int_type == "Kf" ) {
         order = {'O', 'o', 'o', 'O',
                  'O', 'o', 'o', 'C',
                  'C', 'o', 'o', 'C'};
+    } else if ( int_type == "F_Ket" ) {
+        order = {'o', 'O', 'o', 'O',
+                 'o', 'O', 'o', 'C',
+                 'o', 'C', 'o', 'O',
+                 'o', 'C', 'o', 'C'};
+    } else if ( int_type == "F_Bra" ) {
+        order = {'O', 'o', 'O', 'o'};
+    } else if ( int_type == "FG" || int_type == "K" || int_type == "J") {
+        order = {'O', 'O', 'O', 'O'};
     }
 
     const bool frz_bra = (nfrzn_ > 0) && ((*ERI).dim(0) == nact_) && ((*ERI).dim(1) == nact_); // No frozen in Fock Build
@@ -1098,7 +1107,7 @@ void DiskCCSDF12B::form_teints(const std::string& int_type, einsums::DiskTensor<
 
             for (int p = 0; p < nmo1; p++) {
                 for (int r = 0; r < nmo3; r++) {
-                    auto ERI_PRQS = (*ERI)(p + off1, r + off3, Range{off2, off2 + nmo2}, Range{off4, off4 + nmo4});
+                    DiskView<double, 2, 4> ERI_PRQS{(*ERI), Dim<2>{nmo2, nmo4}, Count<4> {1, 1, nmo2, nmo4}, Offset<4>{p + off1, r + off3, off2, off4}, Stride<4>{1, 1, 1, 1}};
                     auto PRQS_view = (*PRQS)(p, r, All, All);
                     set_ERI(ERI_PRQS, PRQS_view);
                 }
@@ -1110,7 +1119,7 @@ void DiskCCSDF12B::form_teints(const std::string& int_type, einsums::DiskTensor<
                 PRQS.reset();
                 for (int r = 0; r < nmo3; r++) {
                     for (int p = 0; p < nmo1; p++) {
-                        auto ERI_rpSQ = (*ERI)(r + off3, p + off1, Range{off4, off4 + nmo4}, Range{off2, off2 + nmo2});
+                        DiskView<double, 2, 4> ERI_rpSQ{(*ERI), Dim<2>{nmo4, nmo2}, Count<4> {1, 1, nmo4, nmo2}, Offset<4>{r + off3, p + off1, off4, off2}, Stride<4>{1, 1, 1, 1}};
                         auto rpSQ_view = RPSQ(r, p, All, All);
                         set_ERI(ERI_rpSQ, rpSQ_view);
                     }
@@ -1123,7 +1132,7 @@ void DiskCCSDF12B::form_teints(const std::string& int_type, einsums::DiskTensor<
                 PRQS.reset();
                 for (int q = 0; q < nmo2; q++) {
                     for (int s = 0; s < nmo4; s++) {
-                        auto ERI_qsPR = (*ERI)(q + off2, s + off4, Range{off1, off1 + nmo1}, Range{off3, off3 + nmo3});
+                        DiskView<double, 2, 4> ERI_qsPR{(*ERI), Dim<2>{nmo1, nmo3}, Count<4> {1, 1, nmo1, nmo3}, Offset<4>{q + off2, s + off4, off1, off3}, Stride<4>{1, 1, 1, 1}};
                         auto qsPR_view = QSPR(q, s, All, All);
                         set_ERI(ERI_qsPR, qsPR_view);
                     }
@@ -1136,7 +1145,7 @@ void DiskCCSDF12B::form_teints(const std::string& int_type, einsums::DiskTensor<
                 PRQS.reset();
                 for (int s = 0; s < nmo4; s++) {
                     for (int q = 0; q < nmo2; q++) {
-                        auto ERI_sqRP = (*ERI)(s + off4, q + off2, Range{off3, off3 + nmo3}, Range{off1, off1 + nmo1});
+                        DiskView<double, 2, 4> ERI_sqRP{(*ERI), Dim<2>{nmo3, nmo1}, Count<4> {1, 1, nmo3, nmo1}, Offset<4>{s + off4, q + off2, off3, off1}, Stride<4>{1, 1, 1, 1}};
                         auto sqRP_view = SQRP(s, q, All, All);
                         set_ERI(ERI_sqRP, sqRP_view);
                     }
@@ -1144,6 +1153,7 @@ void DiskCCSDF12B::form_teints(const std::string& int_type, einsums::DiskTensor<
             } // end of if statement
         }
     timer_off("Set in ERI");
+    //outfile->Printf("   Two-Electron Integrals - Done loop %d\n", idx);
     } // end of for loop
 }
 
@@ -1159,50 +1169,59 @@ void DiskCCSDF12B::form_df_teints(const std::string& int_type, einsums::DiskTens
     if ( int_type == "G" ) {
         order = {'o', 'O', 'o', 'O',
                  'o', 'O', 'o', 'C'};
-    } else if ( int_type == "F" ) {
+    } else if ( int_type == "F_Ket" ) {
         order = {'o', 'O', 'o', 'O',
                  'o', 'O', 'o', 'C',
                  'o', 'C', 'o', 'O',
                  'o', 'C', 'o', 'C'};
+    } else if ( int_type == "F_Bra" ) {
+        order = {'O', 'o', 'O', 'o'};
     } else if ( int_type == "F2" ) {
         order = {'o', 'o', 'o', 'O',
                  'o', 'o', 'o', 'C'};
+    } else if ( int_type == "FG" ) {
+        order = {'O', 'O', 'O', 'O'};
+    } else if ( int_type == "K" || int_type == "J" ) {
+        order = {'O', 'O', 'O', 'O'};
     }
 
+    const bool frz_bra = (nfrzn_ > 0) && ((*ERI).dim(0) == nact_) && ((*ERI).dim(1) == nact_); // No frozen in Fock Build
     const bool frz_ket1 = (nfrzn_ > 0) && ((*ERI).dim(2) == nact_); // No frozen in tensor contractions
     const bool frz_ket2 = (nfrzn_ > 0) && ((*ERI).dim(3) == nact_); // No frozen in tensor contractions
 
     // (PQ|RS)
     for (int idx = 0; idx < (order.size()/4); idx++) {
         const int i = idx * 4;
+        const auto nmo1 = (order[ i ] == 'O') ? nobs_ : (frz_bra) ? nact_ : nocc_;
         const auto nmo2 = (order[i+1] == 'C') ? ncabs_ : (order[i+1] == 'O') ? nobs_ : (frz_ket1) ? nact_ : nocc_;
+        const auto nmo3 = (order[i+2] == 'O') ? nobs_ : (frz_bra) ? nact_ : nocc_;
         const auto nmo4 = (order[i+3] == 'C') ? ncabs_ : (order[i+3] == 'O') ? nobs_ : (frz_ket2) ? nact_ : nocc_;
         const auto off2 = (order[i+1] == 'C') ? nobs_ : 0;
         const auto off4 = (order[i+3] == 'C') ? nobs_ : 0;
 
         // Dunlap's robust density-fitting
-        auto phys_robust = std::make_unique<Tensor<double, 4>>("<PR|F12|QS> MO", nact_, nact_, nmo2, nmo4);
+        auto phys_robust = std::make_unique<Tensor<double, 4>>("<PR|F12|QS> MO", nmo1, nmo3, nmo2, nmo4);
         {
-            Tensor<double, 4> chem_robust("(PQ|F12|RS) MO", nact_, nmo2, nact_, nmo4);
+            Tensor<double, 4> chem_robust("(PQ|F12|RS) MO", nmo1, nmo2, nmo3, nmo4);
 
             timer_on("Robust DF Procedure");
-            auto ARPQ = std::make_unique<Tensor<double, 3>>("(A|R|PQ) MO", naux_, nact_, (*ERI).dim(3));
+            auto ARPQ = std::make_unique<Tensor<double, 3>>("(A|R|PQ) MO", naux_, nmo3, (*ERI).dim(3));
             form_oper_ints(int_type, ARPQ.get());
 
             // Term 1
             auto offm2 = (frz_ket1) ? nfrzn_ : 0;
             auto offm4 = (frz_ket2 && nmo4 != nact_) ? nfrzn_ : 0;
-            Tensor left_metric  = (*J_inv_AB)(All, Range{0, nact_}, Range{off2 + offm2, nmo2 + off2 + offm2});
-            Tensor right_oper = (*ARPQ)(All, Range{0, nact_}, Range{off4 + offm4, nmo4 + off4 + offm4});
+            Tensor left_metric  = (*J_inv_AB)(All, Range{0, nmo1}, Range{off2 + offm2, nmo2 + off2 + offm2});
+            Tensor right_oper = (*ARPQ)(All, Range{0, nmo3}, Range{off4 + offm4, nmo4 + off4 + offm4});
             einsum(Indices{p, q, r, s}, &chem_robust, Indices{A, p, q}, left_metric, Indices{A, r, s}, right_oper);
 
             if ( int_type != "G" ) {
                 // Term 2
                 auto offm2 = (frz_ket1 && nmo4 != nact_) ? nfrzn_ : 0;
                 auto offm4 = (frz_ket2) ? nfrzn_ : 0;
-                Tensor right_metric = (*J_inv_AB)(All, Range{0, nact_}, Range{off4 + offm4, nmo4 + off4 + offm4});
+                Tensor right_metric = (*J_inv_AB)(All, Range{0, nmo3}, Range{off4 + offm4, nmo4 + off4 + offm4});
                 {
-                    Tensor left_oper  = (*ARPQ)(All, Range{0, nact_}, Range{off2 + offm2, nmo2 + off2 + offm2});
+                    Tensor left_oper  = (*ARPQ)(All, Range{0, nmo1}, Range{off2 + offm2, nmo2 + off2 + offm2});
                     einsum(1.0, Indices{p, q, r, s}, &chem_robust,
                            1.0, Indices{A, p, q}, left_oper, Indices{A, r, s}, right_metric);
                 }
@@ -1213,7 +1232,7 @@ void DiskCCSDF12B::form_df_teints(const std::string& int_type, einsums::DiskTens
                     auto ARB = std::make_unique<Tensor<double, 2>>("(A|R|B) MO", naux_, naux_);
                     form_oper_ints(int_type, ARB.get());
 
-                    Tensor<double, 3> tmp{"Temp", naux_, nact_, nmo4};
+                    Tensor<double, 3> tmp{"Temp", naux_, nmo3, nmo4};
                     einsum(Indices{A, r, s}, &tmp, Indices{A, B}, ARB, Indices{B, r, s}, right_metric);
                     ARB.reset();
                     einsum(1.0, Indices{p, q, r, s}, &chem_robust,
@@ -1228,14 +1247,25 @@ void DiskCCSDF12B::form_df_teints(const std::string& int_type, einsums::DiskTens
 
         // Stitch into ERI Tensor
         timer_on("Set in ERI");
-        for (int p = 0; p < nact_; p++) {
-            for (int r = 0; r < nact_; r++) {
-                auto ERI_prQS = (*ERI)(p, r, Range{off2, off2 + nmo2}, Range{off4, off4 + nmo4});
+        for (int p = 0; p < nmo1; p++) {
+            for (int r = 0; r < nmo3; r++) {
+                //auto ERI_prQS = (*ERI)(p, r, Range{off2, off2 + nmo2}, Range{off4, off4 + nmo4});
+                DiskView<double, 2, 4> ERI_prQS{(*ERI), Dim<2>{nmo2, nmo4}, Count<4> {1, 1, nmo2, nmo4}, Offset<4>{p, r, off2, off4}, Stride<4>{1, 1, 1, 1}};
                 auto prQS_view = (*phys_robust)(p, r, All, All);
                 set_ERI(ERI_prQS, prQS_view);
             }
         }
         timer_off("Set in ERI");
+
+        // Debug
+        /*if (int_type == "K") {
+            outfile->Printf("   K (%d, a, %d, %d):", nact_, off2 + 5, off4 + 5);
+            DiskView<double, 1, 4> ERI_Debug{(*ERI), Dim<1>{nvir_}, Count<4> {1, nvir_, 1, 1}, Offset<4>{nact_, nact_, off2 + 5, off4 + 5}, Stride<4>{1, 1, 1, 1}}; ERI_Debug.set_read_only(true);
+            for (int a = 0; a < nvir_; a++) {
+                outfile->Printf(" %d = %e", a, ERI_Debug(a));
+            }
+        }*/
+
     } // end of for loop
 }
 

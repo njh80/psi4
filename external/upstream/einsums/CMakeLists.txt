@@ -1,5 +1,5 @@
 if(${ENABLE_Einsums})
-    find_package(Einsums 0.6 CONFIG)
+    find_package(Einsums 0.6.1 CONFIG)
 
     if(TARGET Einsums::einsums)
         get_property(_loc TARGET Einsums::einsums PROPERTY LOCATION)
@@ -32,7 +32,7 @@ if(${ENABLE_Einsums})
         ExternalProject_Add(einsums_external
             DEPENDS lapack_external
                     hdf5_external
-            URL https://github.com/Einsums/Einsums/archive/v0.6.tar.gz
+            URL https://github.com/Einsums/Einsums/archive/v0.6.1.tar.gz
             UPDATE_COMMAND ""
             CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${STAGED_INSTALL_PREFIX}
                        -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
@@ -47,13 +47,15 @@ if(${ENABLE_Einsums})
 #                       -DENABLE_XHOST=${ENABLE_XHOST}
                        -DEINSUMS_ENABLE_TESTING=OFF
                        -DEINSUMS_USE_HPTT=ON
-#                       -DOpenMP_LIBRARY_DIRS=${OpenMP_LIBRARY_DIRS}
+                       -DOpenMP_LIBRARY_DIRS=${OpenMP_LIBRARY_DIRS}
+                       -DOpenMP_CXX_FLAGS=${OpenMP_CXX_FLAGS}
+                       -DOpenMP_CXX_LIB_NAMES=${OpenMP_LIB_NAMES}
                        -DTargetLAPACK_DIR=${TargetLAPACK_DIR}
                        -DTargetHDF5_DIR=${TargetHDF5_DIR}
                        -DCMAKE_OSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}
                        -DCMAKE_OSX_SYSROOT=${CMAKE_OSX_SYSROOT}
             CMAKE_CACHE_ARGS -DCMAKE_C_FLAGS:STRING=${CMAKE_C_FLAGS}
-                             -DCMAKE_CXX_FLAGS:STRING=${CMAKE_CXX_FLAGS}
+                             -DCMAKE_CXX_FLAGS:STRING=${EXTRA_CXX_FLAGS}
                              -DCMAKE_C_COMPILER_ARG1:STRING=${CMAKE_C_COMPILER_ARG1}
                              -DCMAKE_CXX_COMPILER_ARG1:STRING=${CMAKE_CXX_COMPILER_ARG1}
                              -DTargetOpenMP_FIND_COMPONENTS:STRING=C;CXX)

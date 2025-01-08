@@ -3287,7 +3287,7 @@ int read_options(const std::string &name, Options &options, bool suppress_printi
         options.add_double("R_CONVERGENCE", 1e-7);
 
         /*- SUBSECTION General Options -*/
-        /*- Choose conventional or density-fitted. Default to CONV -*/
+        /*- Choose conventional or density-fitted. Default to DF -*/
         options.add_str("F12_TYPE", "DF", "CONV DF DISK_CONV DISK_DF");
         /*- Whether to read-in stored integrals from previous computation -*/
         options.add_bool("F12_READ_INTS", false);

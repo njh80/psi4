@@ -2982,45 +2982,72 @@ def run_ccsd_f12b(name, **kwargs):
 
     """
     optstash = p4util.OptionsState(
+        ['SCF_TYPE'],
         ['F12_TYPE'],
         ['CABS_BASIS'],
         ['DF_BASIS_F12'])
+
+    core.set_local_option("CCSD-F12B", "F12_TYPE", core.get_option("CCSD-F12B", "F12_TYPE"))
+
+    if not core.has_global_option_changed('SCF_TYPE')\
+        and "CONV" in core.get_option("CCSD-F12B", "F12_TYPE"):
+        core.set_global_option('SCF_TYPE', 'PK')
+        core.print_out("""    SCF Algorithm Type set to PK.\n""")
+    elif not "CONV" in core.get_option("CCSD-F12B", "F12_TYPE"):
+        dfbs = core.get_option("CCSD-F12B", "DF_BASIS_F12")
+        core.set_global_option('SCF_TYPE', 'DF')
+        core.set_local_option("SCF", "DF_BASIS_SCF", dfbs)
     
     if core.get_global_option('REFERENCE') != "RHF":
-        raise ValidationError("CCSD-F12 is not available for %s references.",
+        raise ValidationError("CCSD-F12B is not available for %s references.",
                               core.get_global_option('REFERENCE'))
+    
+
+    # Bypass the scf call if a reference wavefunction is given
+    ref_wfn = kwargs.get('ref_wfn', None)
+    if ref_wfn is None:
+        ref_wfn = scf_helper(name, use_c1=True, **kwargs)  # C1 certified
+    if ref_wfn.molecule().schoenflies_symbol() != 'c1':
+        raise ValidationError("""  CCSD-F12B does not make use of molecular symmetry: """
+                              """reference wavefunction must be C1.\n""")
+
     # Ensure that SCF and MP2 are run with CONV if F12_TYPE is CONV
-    if "CONV" in core.get_local_option("MP2-F12", "F12_TYPE"):
+    if "CONV" in core.get_local_option("CCSD-F12B", "F12_TYPE"):
         core.set_global_option("MP2_TYPE", "CONV")
-        ref_wfn = run_occ("mp2", kwargs)
+        ref_wfn = run_occ("mp2", ref_wfn=ref_wfn)
     else:
-        dfbs = core.get_local_option("MP2-F12", "DF_BASIS_F12")
-        core.set_global_option("SCF_TYPE", "DF")
-        core.set_local_option("SCF", "DF_BASIS_SCF", dfbs)
-        core.set_global_option("MP2_TYPE", "DF")
         core.set_local_option("DFMP2", "DF_BASIS_MP2", dfbs)
-        ref_wfn = run_dfmp2("dfmp2", kwargs)
+        ref_wfn = run_dfmp2("dfmp2", ref_wfn=ref_wfn)
         
     core.tstart()
     core.print_out('\n')
-    p4util.banner('CCSD-F12')
+    p4util.banner('CCSD-F12B')
     core.print_out('\n')
+
+    # Default CABS to OPTRI basis sets if available
+    OBS = core.get_global_option("BASIS")
+    CABS = core.get_option("CCSD-F12B", "CABS_BASIS")
+    if CABS == "" and "CC-PV" in OBS and ("AUG" in OBS or "F12" in OBS):
+        core.set_local_option("CCSD-F12B", "CABS_BASIS", OBS + "-OPTRI")
+        CABS = core.get_option("CCSD-F12B", "CABS_BASIS")
+    elif CABS == "":
+        raise ValidationError("""  No CABS_BASIS given!""")
 
     # Create CABS
     keys = ["BASIS","CABS_BASIS"]
-    targets = [core.get_global_option("BASIS"), core.get_local_option("CCSDF12", "CABS_BASIS")]
+    targets = [OBS, CABS]
     roles = ["ORBITAL","F12"]
-    others = [core.get_global_option("BASIS"), core.get_global_option("BASIS")]
+    others = [OBS, OBS]
 
     # Creates combined basis set in Python
     mol = ref_wfn.molecule()
     combined = qcdb.libmintsbasisset.BasisSet.pyconstruct_combined(mol.save_string_xyz(), keys, targets, roles, others)
     cabs = core.BasisSet.construct_from_pydict(mol, combined, combined["puream"])
     ref_wfn.set_basisset("CABS", cabs)
-    ccsdf12b_wfn = core.ccsdf12(ref_wfn)
+    ccsdf12b_wfn = core.ccsdf12b(ref_wfn)
     ccsdf12b_wfn.compute_energy()
-    ccsdf12b_wfn.set_variable('CURRENT ENERGY', ccsdf12b_wfn.variable('CCSD TOTAL ENERGY'))
-    ccsdf12b_wfn.set_variable('CURRENT CORRELATION ENERGY', ccsdf12b_wfn.variable('CCSD CORRELATION ENERGY'))
+    ccsdf12b_wfn.set_variable('CURRENT ENERGY', ccsdf12b_wfn.variable('CCSD-F12B TOTAL ENERGY'))
+    ccsdf12b_wfn.set_variable('CURRENT CORRELATION ENERGY', ccsdf12b_wfn.variable('CCSD-F12B CORRELATION ENERGY'))
 
     # Shove variables into global space
     for k, v in ccsdf12b_wfn.variables().items():

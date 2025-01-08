@@ -1378,8 +1378,10 @@ void Matrix::gemm(const char &transa, const char &transb, const int &m, const in
 }
 
 void Matrix::gemm(bool transa, bool transb, double alpha, const Matrix *const a, const Matrix *const b, double beta) {
-    if (nirrep_ != a->nirrep_ || nirrep_ != b->nirrep_)
+    // Check number of irreps
+    if (nirrep_ != a->nirrep_ || nirrep_ != b->nirrep_) {
         throw PSIEXCEPTION("Matrix::gemm error: Number of irreps do not equal.");
+    }
 
     // Check symmetry
     if (symmetry_ != (a->symmetry_ ^ b->symmetry_)) {

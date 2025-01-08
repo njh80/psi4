@@ -91,6 +91,10 @@ target_compile_definitions(l2export
      # VISIBILITY_INLINES_HIDDEN 1
    # )
 
+link_directories(${HDF5_LIBRARY_DIRS})
+target_link_options(core PRIVATE -L${HDF5_LIBRARY_DIRS})
+
+
 get_property(psi4_binmodules GLOBAL PROPERTY LINKBINLIST)
 get_property(psi4_libmodules GLOBAL PROPERTY LINKLIBLIST)
 target_link_libraries(core
@@ -101,6 +105,8 @@ target_link_libraries(core
     ${POST_LIBRARY_OPTION}
     ${LIBC_INTERJECT}
     tgt::lapack # OpenMP flags to core.cc
+  PUBLIC
+    ${HDF_LIBRARIES}
   )
 
 if(TARGET ECPINT::ecpint)

@@ -50,7 +50,7 @@ if(ENABLE_ambit OR ENABLE_CheMPS2 OR ENABLE_Einsums)
     find_package(TargetHDF5 CONFIG REQUIRED)
 
     # Instead of getting the INTERFACE_LINK_LIBRARIES, set your own library
-    set(HDF5_LIBRARIES "hdf5")  # Set to use -lhdf5
+    set(HDF5_LIBRARIES "${HDF5_LIBRARY_DIRS}/libhdf5.dylib")  # Set to use -lhdf5
 
     # Print the found version and libraries
     message(STATUS "${Cyan}Using HDF5${ColourReset}: ${HDF5_LIBRARIES};... (found version ${${PN}_VERSION})")    
@@ -62,14 +62,13 @@ if(ENABLE_ambit OR ENABLE_CheMPS2 OR ENABLE_Einsums)
     get_property(_ill TARGET tgt::hdf5 PROPERTY INTERFACE_LINK_LIBRARIES)
     list(GET _ill 0 _ill0)
     list(APPEND _addons ${_ill})
-    message(STATUS "Uses ${TargetHDF5_DIR}, ${HDF5_LIBRARY_DIRS} and ${_ill} to build einsums v0.6")
+    message(STATUS "Uses ${TargetHDF5_DIR}, ${HDF5_LIBRARY_DIRS} and ${_ill} to build einsums v0.6.1")
     
     #message(STATUS "${Cyan}Using HDF5${ColourReset}: ${_ill0};... (found version ${${PN}_VERSION})")
+
 else()
     message(STATUS "Disabled HDF5 ${TargetHDF5_DIR}")
 endif()
-
-link_directories(/opt/homebrew/opt/hdf5/lib)
 
 #  <<  Pybind11 & Python  >>
 find_package(Python 3.8 COMPONENTS Interpreter Development NumPy REQUIRED)
@@ -150,7 +149,7 @@ else()
 endif()
 
 if(${ENABLE_Einsums})
-    find_package(Einsums 0.6 CONFIG REQUIRED)
+    find_package(Einsums 0.6.1 CONFIG REQUIRED)
     get_property(_loc TARGET Einsums::einsums PROPERTY LOCATION)
     list(APPEND _addons ${_loc})
     message(STATUS "${Cyan}Using Einsums${ColourReset}: ${_loc} (version ${Einsums_VERSION})")
@@ -162,6 +161,24 @@ find_package(gau2grid 2.0 CONFIG REQUIRED)
 get_property(_loc TARGET gau2grid::gg PROPERTY LOCATION)
 list(APPEND _addons ${_loc})
 message(STATUS "${Cyan}Using gau2grid${ColourReset}: ${_loc} (version ${gau2grid_VERSION})")
+
+if(${ENABLE_gauxc})
+    if(NOT "${gauxc_DIR}" STREQUAL "")
+        if("${IntegratorXX_DIR}" STREQUAL "")
+            set(IntegratorXX_DIR ${gauxc_DIR}/../IntegratorXX)
+        endif()
+        set(ExchCXX_DIR ${gauxc_DIR}/../ExchCXX)
+    endif()
+
+    get_property(BLAS_LIBRARIES TARGET tgt::lapk PROPERTY INTERFACE_LINK_LIBRARIES)
+
+    find_package(gauxc CONFIG REQUIRED COMPONENTS IntegratorXX ExchCXX)
+    get_property(_loc TARGET gauxc::gauxc PROPERTY LOCATION)
+    list(APPEND _addons ${_loc})
+    message(STATUS "${Cyan}Using gauxc${ColourReset}: ${_loc} (version ${gauxc_VERSION})")
+else()
+    message(STATUS "Disabled GauXC ${gauxc_DIR}")
+endif()
 
 if(${ENABLE_gdma})
     # neither gdma nor pygdma actually needed c-side; runtime detection would
@@ -231,7 +248,10 @@ else()
     message(STATUS "Disabled BrianQC ${BrianQC_DIR}")
 endif()
 
-find_package(Libxc 6.1.0 CONFIG REQUIRED COMPONENTS C)
+find_package(Libxc 7.0.0 CONFIG QUIET COMPONENTS C)
+if(NOT ${Libxc_FOUND})
+    find_package(Libxc 6.1.0 CONFIG REQUIRED COMPONENTS C)
+endif()
 get_property(_loc TARGET Libxc::xc PROPERTY LOCATION)
 list(APPEND _addons ${_loc})
 message(STATUS "${Cyan}Using Libxc${ColourReset}: ${_loc} (version ${Libxc_VERSION})")
@@ -241,6 +261,12 @@ if(APPLE)
 elseif(UNIX)
     set(PRE_LIBRARY_OPTION -Wl,--whole-archive)
     set(POST_LIBRARY_OPTION -Wl,--no-whole-archive)
+endif()
+
+# add -pedantic-errors flag here, if FORCE_PEDANTIC is enabled 
+if(${FORCE_PEDANTIC}) 
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -pedantic-errors")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic-errors")
 endif()
 
 # <<<  Build  >>>
@@ -338,6 +364,7 @@ install(
 install(
   DIRECTORY
     ../tests/pytests/test_fchk_writer
+    ../tests/pytests/test_gauxc_writer
     ../tests/pytests/test_molden_writer
     ../tests/pytests/test_psi4_qcschema
   DESTINATION ${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_LIBDIR}${PYMOD_INSTALL_LIBDIR}/psi4/tests/

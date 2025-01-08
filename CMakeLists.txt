@@ -305,6 +305,8 @@ ExternalProject_Add(psi4-core
               -DENABLE_OPENMP=${ENABLE_OPENMP}
               -DTargetLAPACK_DIR=${TargetLAPACK_DIR}
               -DTargetHDF5_DIR=${TargetHDF5_DIR}
+              -DHDF5_LIBRARIES=${HDF5_LIBRARIES}
+              -DHDF5_LIBRARY_DIRS=${HDF5_LIBRARY_DIRS}
               -DEigen3_DIR=${Eigen3_DIR}
               -Dambit_DIR=${ambit_DIR}
               -DCheMPS2_DIR=${CheMPS2_DIR}
@@ -329,6 +331,8 @@ ExternalProject_Add(psi4-core
               -DRESTRICT_KEYWORD=${RESTRICT_KEYWORD}
               -DFC_SYMBOL=${FC_SYMBOL}
               -DOpenMP_LIBRARY_DIRS=${OpenMP_LIBRARY_DIRS}
+              -DOpenMP_CXX_FLAGS=${OpenMP_CXX_FLAGS}
+              -DOpenMP_CXX_LIB_NAMES=${OpenMP_CXX_LIB_NAMES}
               -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
               -DENABLE_CYTHONIZE=${ENABLE_CYTHONIZE}
               -Dpsi4_SHGSHELL_ORDERING=${psi4_SHGSHELL_ORDERING}
