@@ -4,6 +4,7 @@ list(APPEND sources
   integrals.cc
   f12_intermediates.cc
   amplitudes.cc
+  scuseria.cc
   )
 
 if(TARGET Einsums::einsums)

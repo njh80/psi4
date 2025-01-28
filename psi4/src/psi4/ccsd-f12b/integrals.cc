@@ -133,6 +133,10 @@ void CCSDF12B::convert_C(einsums::Tensor<double,2> *C, OrbitalSpace bs, const in
     for (int p = 0; p < dim1; p++) {
         for (int q = start; q < stop; q++) {
             (*C)(p, q - start) = bs.C()->get(p, q);
+            // Debug
+            if ((*C)(p, q - start) > 1.0e3) {
+                outfile->Printf("WARN: Convertion coeff value excessively large C[%d, %d] = %f\n", p, q - start, (*C)(p, q - start));
+            }
         }
     }
 }
@@ -379,6 +383,9 @@ void CCSDF12B::three_index_ao_computer(const std::string& int_type, einsums::Ten
 
                             for (size_t q = 0; q < numQ; q++, idx++) {
                                 *targetPQ = *targetQP = ints_buff[idx];
+                                if (ints_buff[idx] > 10.0) {
+                                    outfile->Printf("WARN: Bpq[%d, %d, %d] = %f\n", fxnB, fxnP, index_Q, ints_buff[idx]);
+                                }
 
                                 targetPQ++;
                                 targetQP += (*Bpq).dim(2);
@@ -395,6 +402,9 @@ void CCSDF12B::three_index_ao_computer(const std::string& int_type, einsums::Ten
 
                             for (size_t q = 0; q < numQ; q++, index++) {
                                 *target = ints_buff[index];
+                                if (ints_buff[index] > 10.0) {
+                                    outfile->Printf("WARN: Bpq[%d, %d, %d] = %f\n", B_fxns, P_fxns, index_Q, ints_buff[index]);
+                                }
 
                                 target++;
                             }
@@ -610,8 +620,8 @@ void CCSDF12B::form_metric_ints(einsums::Tensor<double, 3> *DF_ERI, bool is_fock
                  'C', 'O',
                  'C', 'C'};
     } else {
-        order = {'o', 'O',
-                 'o', 'C'};
+        order = {'O', 'O',
+                 'O', 'C'};
     }
 
     const bool use_frzn = !is_fock;
@@ -818,6 +828,7 @@ void CCSDF12B::form_df_teints(const std::string& int_type, einsums::Tensor<doubl
     using namespace tensor_algebra;
     using namespace tensor_algebra::index;
 
+    const bool frz_bra = (nfrzn_ > 0) && ((*ERI).dim(0) == nact_) && ((*ERI).dim(1) == nact_); // No frozen in Fock Build
     const bool frz_ket1 = (nfrzn_ > 0) && ((*ERI).dim(2) == nact_); // No frozen in tensor contractions
     const bool frz_ket2 = (nfrzn_ > 0) && ((*ERI).dim(3) == nact_); // No frozen in tensor contractions
 
@@ -830,9 +841,9 @@ void CCSDF12B::form_df_teints(const std::string& int_type, einsums::Tensor<doubl
     int off1, off2, off3, off4;
     for (int idx = 0; idx < (order.size()/4); idx++) {
         const int i = idx * 4;
-        const auto nmo1 = (order[ i ] == 'C') ? ncabs_ : (order[ i ] == 'O') ? nobs_ : nact_;
+        const auto nmo1 = (order[ i ] == 'C') ? ncabs_ : (order[ i ] == 'O') ? nobs_ : (frz_bra) ? nact_ : nocc_;
         const auto nmo2 = (order[i+1] == 'C') ? ncabs_ : (order[i+1] == 'O') ? nobs_ : (frz_ket1) ? nact_ : nocc_;
-        const auto nmo3 = (order[i+2] == 'C') ? ncabs_ : (order[i+2] == 'O') ? nobs_ : nact_;
+        const auto nmo3 = (order[i+2] == 'C') ? ncabs_ : (order[i+2] == 'O') ? nobs_ : (frz_bra) ? nact_ : nocc_;
         const auto nmo4 = (order[i+3] == 'C') ? ncabs_ : (order[i+3] == 'O') ? nobs_ : (frz_ket2) ? nact_ : nocc_;
         auto off1 = (order[ i ] == 'C') ? nobs_ : 0;
         auto off2 = (order[i+1] == 'C') ? nobs_ : 0;
@@ -1009,9 +1020,9 @@ void DiskCCSDF12B::form_teints(const std::string& int_type, einsums::DiskTensor<
                  'o', 'O', 'o', 'C',
                  'o', 'C', 'o', 'O',
                  'o', 'C', 'o', 'C'};
-    } else if ( int_type == "F_Bra" ) {
+    } else if ( int_type == "FG" || int_type == "F_Bra" ) {
         order = {'O', 'o', 'O', 'o'};
-    } else if ( int_type == "FG" || int_type == "K" || int_type == "J") {
+    } else if ( int_type == "K" || int_type == "J") {
         order = {'O', 'O', 'O', 'O'};
     }
 
@@ -1174,13 +1185,11 @@ void DiskCCSDF12B::form_df_teints(const std::string& int_type, einsums::DiskTens
                  'o', 'O', 'o', 'C',
                  'o', 'C', 'o', 'O',
                  'o', 'C', 'o', 'C'};
-    } else if ( int_type == "F_Bra" ) {
+    } else if ( int_type == "F_Bra" || int_type == "FG" ) {
         order = {'O', 'o', 'O', 'o'};
     } else if ( int_type == "F2" ) {
         order = {'o', 'o', 'o', 'O',
                  'o', 'o', 'o', 'C'};
-    } else if ( int_type == "FG" ) {
-        order = {'O', 'O', 'O', 'O'};
     } else if ( int_type == "K" || int_type == "J" ) {
         order = {'O', 'O', 'O', 'O'};
     }
@@ -1209,19 +1218,21 @@ void DiskCCSDF12B::form_df_teints(const std::string& int_type, einsums::DiskTens
             form_oper_ints(int_type, ARPQ.get());
 
             // Term 1
+            auto offm13 = (frz_bra) ? nfrzn_ : 0;
             auto offm2 = (frz_ket1) ? nfrzn_ : 0;
             auto offm4 = (frz_ket2 && nmo4 != nact_) ? nfrzn_ : 0;
-            Tensor left_metric  = (*J_inv_AB)(All, Range{0, nmo1}, Range{off2 + offm2, nmo2 + off2 + offm2});
-            Tensor right_oper = (*ARPQ)(All, Range{0, nmo3}, Range{off4 + offm4, nmo4 + off4 + offm4});
+            Tensor left_metric  = (*J_inv_AB)(All, Range{offm13, nmo1 + offm13}, Range{off2 + offm2, nmo2 + off2 + offm2});
+            Tensor right_oper = (*ARPQ)(All, Range{offm13, nmo3 + offm13}, Range{off4 + offm4, nmo4 + off4 + offm4});
             einsum(Indices{p, q, r, s}, &chem_robust, Indices{A, p, q}, left_metric, Indices{A, r, s}, right_oper);
 
             if ( int_type != "G" ) {
                 // Term 2
+                auto offm13 = (frz_bra) ? nfrzn_ : 0;
                 auto offm2 = (frz_ket1 && nmo4 != nact_) ? nfrzn_ : 0;
                 auto offm4 = (frz_ket2) ? nfrzn_ : 0;
-                Tensor right_metric = (*J_inv_AB)(All, Range{0, nmo3}, Range{off4 + offm4, nmo4 + off4 + offm4});
+                Tensor right_metric = (*J_inv_AB)(All, Range{offm13, nmo3 + offm13}, Range{off4 + offm4, nmo4 + off4 + offm4});
                 {
-                    Tensor left_oper  = (*ARPQ)(All, Range{0, nmo1}, Range{off2 + offm2, nmo2 + off2 + offm2});
+                    Tensor left_oper  = (*ARPQ)(All, Range{offm13, nmo1 + offm13}, Range{off2 + offm2, nmo2 + off2 + offm2});
                     einsum(1.0, Indices{p, q, r, s}, &chem_robust,
                            1.0, Indices{A, p, q}, left_oper, Indices{A, r, s}, right_metric);
                 }
@@ -1256,15 +1267,6 @@ void DiskCCSDF12B::form_df_teints(const std::string& int_type, einsums::DiskTens
             }
         }
         timer_off("Set in ERI");
-
-        // Debug
-        /*if (int_type == "K") {
-            outfile->Printf("   K (%d, a, %d, %d):", nact_, off2 + 5, off4 + 5);
-            DiskView<double, 1, 4> ERI_Debug{(*ERI), Dim<1>{nvir_}, Count<4> {1, nvir_, 1, 1}, Offset<4>{nact_, nact_, off2 + 5, off4 + 5}, Stride<4>{1, 1, 1, 1}}; ERI_Debug.set_read_only(true);
-            for (int a = 0; a < nvir_; a++) {
-                outfile->Printf(" %d = %e", a, ERI_Debug(a));
-            }
-        }*/
 
     } // end of for loop
 }

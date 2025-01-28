@@ -576,7 +576,7 @@ void CCSDF12B::form_D_Werner(einsums::Tensor<double, 4> *D, einsums::Tensor<doub
             }
         }
     } else { // Can add virtual contributions to all elements as dimensions identical
-        sort(1.0, Indices{i, j, a, b}, &(*D), 1.0, Indices{i, j, a, b}, *tau);
+        sort(1.0, Indices{k, l, a, b}, &(*D), 1.0, Indices{k, l, a, b}, *tau);
     }
 }
 
@@ -2037,7 +2037,7 @@ void DiskCCSDF12B::form_s(einsums::DiskTensor<double, 2> *s, einsums::DiskTensor
     outfile->Printf("      Mean Value: %e, Standard Deviation: %e\n", mean, stdDev);
 
     Tensor<double, 2> tmp {"Temp", nvir_, nvir_};
-    sort(1.0, Indices{b, a}, &tmp, 1.0, Indices{b, a}, h_vv.get());
+    sort(0.0, Indices{b, a}, &tmp, 1.0, Indices{a, b}, h_vv.get());
     sort(1.0, Indices{b, a}, &tmp, -1.0, Indices{b, a}, A_view.get());
     einsum(1.0, Indices{i, a}, &s_view.get(), 1.0, Indices{a, b}, tmp, Indices{i, b}, t_view.get());
 
@@ -2186,21 +2186,22 @@ void DiskCCSDF12B::form_Y_Werner(einsums::DiskTensor<double, 4> *Y, einsums::Dis
     
     for (int i = 0; i < nact_; i++) {
         for (int j = 0; j < nact_; j++) {
-            auto taut_ij = (*taut)(i, j, All, All); taut_ij.set_read_only(true);
-            auto taut_ji = (*taut)(j, i, All, All); taut_ji.set_read_only(true);
-            auto L_oovv_ij = (*L_oovv)(i, j, All, All); L_oovv_ij.set_read_only(true);
+            DiskView<double, 3, 4> taut_kj{(*taut), Dim<3>{nact_, nvir_, nvir_}, Count<4>{nact_, 1, nvir_, nvir_}, Offset<4>{0, j, 0, 0}, Stride<4>{1, 1, 1, 1}}; taut_kj.set_read_only(true);
+            DiskView<double, 3, 4> taut_jk{(*taut), Dim<3>{nact_, nvir_, nvir_}, Count<4>{1, nact_, nvir_, nvir_}, Offset<4>{j, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; taut_jk.set_read_only(true);
+            DiskView<double, 3, 4> L_oovv_i{(*L_oovv), Dim<3>{nact_, nvir_, nvir_}, Count<4>{1, nact_, nvir_, nvir_}, Offset<4>{i, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; L_oovv_i.set_read_only(true);
+            auto Y_IJ = (*Y)(i, j, All, All);
+            Tensor<double, 3> tmp {"Temp Value", nact_, nvir_, nvir_};
+            sort(0.0, Indices{k, c, b}, &tmp, 2.0, Indices{k, c, b}, taut_kj.get());
+            sort(1.0, Indices{k, c, b}, &tmp, -1.0, Indices{k, c, b}, taut_jk.get());
+            einsum(1.0, Indices{a, b}, &Y_IJ.get(), 0.5, Indices{k, a, c}, L_oovv_i.get(), Indices{k, c, b}, tmp);
+            
             DiskView<double, 2, 4> L_ooov_ij{(*L_ooov), Dim<2>{nact_, nvir_}, Count<4>{1, nact_, 1, nvir_}, Offset<4>{i, 0, j, 0}, Stride<4>{1, 1, 1, 1}}; L_ooov_ij.set_read_only(true);
             auto J_oovv_ij = (*J)(i, Range{nocc_, nobs_}, j, Range{nocc_, nobs_}); J_oovv_ij.set_read_only(true);
             //auto K_oovv_ij = (*K)(Range{nocc_, nobs_}, j, i, Range{nocc_, nobs_}); K_oovv_ij.set_read_only(true);
             auto K_oovv_ij = (*K)(i, j, Range{nocc_, nobs_}, Range{nocc_, nobs_}); K_oovv_ij.set_read_only(true);
 
-            Tensor<double, 2> tmp {"Temp Value", nvir_, nvir_};
-            sort(1.0, Indices{a, b}, &tmp, 2.0, Indices{a, b}, taut_ij.get());
-            sort(1.0, Indices{a, b}, &tmp, -1.0, Indices{b, a}, taut_ji.get());
-            auto Y_IJ = (*Y)(i, j, All, All);
             sort(1.0, Indices{a, b}, &Y_IJ.get(), -0.5, Indices{a, b}, J_oovv_ij.get());
             sort(1.0, Indices{a, b}, &Y_IJ.get(), 1.0, Indices{a, b}, K_oovv_ij.get());
-            einsum(1.0, Indices{a, b}, &Y_IJ.get(), 0.5, Indices{a, b}, L_oovv_ij.get(), Indices{a, b}, tmp);
             einsum(1.0, Indices{a, b}, &Y_IJ.get(), -0.5, Indices{l, a}, L_ooov_ij.get(), Indices{l, b}, t_view.get());
         }
     }
@@ -2245,7 +2246,7 @@ void DiskCCSDF12B::form_Z_Werner(einsums::DiskTensor<double, 4> *Z, einsums::Dis
             Z_IJ.zero();
             sort(1.0, Indices{a, b}, &Z_IJ.get(), 1.0, Indices{a, b}, J_oovv_ij.get());
             einsum(1.0, Indices{a, b}, &Z_IJ.get(), 1.0, Indices{a, b, c}, J_ovvv_i.get(), Indices{c}, t_j.get());
-            einsum(1.0, Indices{a, b}, &Z_IJ.get(), -1.0, Indices{l, a, b}, K_oovv_i.get(), Indices{l, a, b}, taut_j.get());
+            einsum(1.0, Indices{a, b}, &Z_IJ.get(), -1.0, Indices{l, a, c}, K_oovv_i.get(), Indices{l, c, b}, taut_j.get());
             einsum(1.0, Indices{a, b}, &Z_IJ.get(), -1.0, Indices{l, a}, K_ooov_ij.get(), Indices{l, b}, t_view.get());
             //einsum(1.0, Indices{a, b}, &Z_IJ.get(), -1.0, Indices{a, l, b}, K_oovv_i.get(), Indices{l, a, b}, taut_j.get());
             //einsum(1.0, Indices{a, b}, &Z_IJ.get(), -1.0, Indices{a, l}, K_ooov_ij.get(), Indices{l, b}, t_view.get());
@@ -2325,7 +2326,7 @@ void DiskCCSDF12B::form_G(einsums::DiskTensor<double, 4> *G, einsums::DiskTensor
             auto T_ij = (*T_ijab)(i, j, All, All); T_ij.set_read_only(true);
             
             auto G_ij = (*G)(i, j, All, All);
-            einsum(1.0, Indices{a, b}, &G_ij.get(), 1.0, Indices{a, b}, T_ij.get(), Indices{a, b}, X_view.get());
+            einsum(1.0, Indices{a, b}, &G_ij.get(), 1.0, Indices{a, c}, T_ij.get(), Indices{c, b}, X_view.get());
 
             for (int a = 0; a < nvir_; a++) {
                 auto D_ij = (*D)(i, j, All, All); D_ij.set_read_only(true);
@@ -2335,12 +2336,12 @@ void DiskCCSDF12B::form_G(einsums::DiskTensor<double, 4> *G, einsums::DiskTensor
                 DiskView<double, 1, 4> K_ooov_ija{(*K), Dim<1>{nact_}, Count<4>{1, 1, 1, nact_}, Offset<4>{i + nfrzn_, j + nfrzn_, a + nocc_, nfrzn_}, Stride<4>{1, 1, 1, 1}}; K_ooov_ija.set_read_only(true);
                 DiskView<double, 2, 4> T_ia{(*T_ijab), Dim<2>{nact_, nvir_}, Count<4>{1, nact_, 1, nvir_}, Offset<4>{i, 0, a, 0}, Stride<4>{1, 1, 1, 1}}; T_ia.set_read_only(true);
                 DiskView<double, 2, 4> T_ja{(*T_ijab), Dim<2>{nact_, nvir_}, Count<4>{nact_, 1, 1, nvir_}, Offset<4>{0, i, a, 0}, Stride<4>{1, 1, 1, 1}}; T_ja.set_read_only(true);
-                DiskView<double, 2, 4> Y_ja{(*Y), Dim<2>{nact_, nvir_}, Count<4>{nact_, 1, 1, nvir_}, Offset<4>{0, j, a, 0}, Stride<4>{1, 1, 1, 1}}; Y_ja.set_read_only(true);
+                DiskView<double, 3, 4> Y_j{(*Y), Dim<3>{nact_, nvir_, nvir_}, Count<4>{nact_, 1, nvir_, nvir_}, Offset<4>{0, j, 0, 0}, Stride<4>{1, 1, 1, 1}}; Y_j.set_read_only(true);
                 DiskView<double, 1, 2> beta_i{(*beta), Dim<1>{nact_}, Count<2>{nact_, 1}, Offset<2>{0, i}, Stride<2>{1, 1}}; beta_i.set_read_only(true);
                 DiskView<double, 2, 4> tau_ja{(*tau), Dim<2>{nact_, nvir_}, Count<4>{nact_, 1, 1, nvir_}, Offset<4>{0, j, a, 0}, Stride<4>{1, 1, 1, 1}}; tau_ja.set_read_only(true);
-                DiskView<double, 2, 4> Z_ja{(*Z), Dim<2>{nact_, nvir_}, Count<4>{nact_, 1, 1, nvir_}, Offset<4>{0, j, a, 0}, Stride<4>{1, 1, 1, 1}}; Z_ja.set_read_only(true);
-                DiskView<double, 2, 4> Z_ia{(*Z), Dim<2>{nact_, nvir_}, Count<4>{nact_, 1, nvir_, 1}, Offset<4>{0, i, 0, a}, Stride<4>{1, 1, 1, 1}}; Z_ia.set_read_only(true);
-                DiskView<double, 2, 4> T_jba{(*T_ijab), Dim<2>{nact_, nvir_}, Count<4>{nact_, 1, nvir_, 1}, Offset<4>{0, j, 0, a}, Stride<4>{1, 1, 1, 1}}; T_jba.set_read_only(true);
+                DiskView<double, 3, 4> Z_j{(*Z), Dim<3>{nact_, nvir_, nvir_}, Count<4>{nact_, 1, nvir_, nvir_}, Offset<4>{0, j, 0, 0}, Stride<4>{1, 1, 1, 1}}; Z_j.set_read_only(true);
+                DiskView<double, 2, 4> Z_ja{(*Z), Dim<2>{nact_, nvir_}, Count<4>{nact_, 1, nvir_, 1}, Offset<4>{0, j, 0, a}, Stride<4>{1, 1, 1, 1}}; Z_ja.set_read_only(true);
+                DiskView<double, 3, 4> T_i{(*T_ijab), Dim<3>{nact_, nvir_, nvir_}, Count<4>{nact_, 1, nvir_, nvir_}, Offset<4>{0, i, 0, 0}, Stride<4>{1, 1, 1, 1}}; T_i.set_read_only(true);
                 auto G_ija = (*G)(i, j, a, All);
 
                 Tensor<double, 1> tmp2 {"Temp Value", nact_};
@@ -2350,13 +2351,13 @@ void DiskCCSDF12B::form_G(einsums::DiskTensor<double, 4> *G, einsums::DiskTensor
                 sort(1.0, Indices{k}, &tmp2, 1.0, Indices{k}, K_ooov_ija.get());
                 einsum(1.0, Indices{b}, &G_ija.get(), -1.0, Indices{k}, tmp2, Indices{k, b}, t_view.get());
 
-                sort(1.0, Indices{j, b}, &tmp, 2.0, Indices{j, b}, T_ia.get());
-                sort(1.0, Indices{j, b}, &tmp, -1.0, Indices{j, b}, T_ja.get());
-                einsum(1.0, Indices{b}, &G_ija.get(), 1.0, Indices{k, b}, tmp, Indices{k, b}, Y_ja.get());
+                sort(1.0, Indices{k, c}, &tmp, 2.0, Indices{k, c}, T_ia.get());
+                sort(1.0, Indices{k, c}, &tmp, -1.0, Indices{k, c}, T_ja.get());
+                einsum(1.0, Indices{b}, &G_ija.get(), 1.0, Indices{k, c}, tmp, Indices{k, c, b}, Y_j.get());
 
                 einsum(1.0, Indices{b}, &G_ija.get(), -1.0, Indices{k}, beta_i.get(), Indices{k, b}, tau_ja.get());
-                einsum(1.0, Indices{b}, &G_ija.get(), -0.5, Indices{k, b}, T_ja.get(), Indices{k, b}, Z_ja.get());
-                einsum(1.0, Indices{b}, &G_ija.get(), 0.5, Indices{k, b}, T_jba.get(), Indices{k, b}, Z_ia.get());
+                einsum(1.0, Indices{b}, &G_ija.get(), -0.5, Indices{k, c}, T_ja.get(), Indices{k, c, b}, Z_j.get());
+                einsum(1.0, Indices{b}, &G_ija.get(), -1.0, Indices{k, b, c}, T_i.get(), Indices{k, c}, Z_ja.get());
             }
 
             /*if (iteration_ < 2) {
@@ -2386,7 +2387,7 @@ void DiskCCSDF12B::form_V_ijab(einsums::DiskTensor<double, 4> *V_ijab, einsums::
     size_t block_size = static_cast<size_t>(std::sqrt((((memory_ * 0.5)/ double_memory_) / (nobs_ - nfrzn_)) / (nobs_ - nfrzn_))); // Assume memory has been used elsewhere!
     int last_block = static_cast<int>(nvir_ % block_size);
     int no_blocks = static_cast<int>((nvir_ / block_size) + 1);
-
+    /*
 #pragma omp parallel for schedule(dynamic) collapse(2) num_threads(nthreads_)
     for (int i = 0; i < nact_; i++) {
         for (int j = 0; j < nact_; j++) {
@@ -2420,7 +2421,7 @@ void DiskCCSDF12B::form_V_ijab(einsums::DiskTensor<double, 4> *V_ijab, einsums::
                 }
             }
         }
-    }
+    }*/
 
     /* Normal Residual terms */
     outfile->Printf("Normal terms\n");

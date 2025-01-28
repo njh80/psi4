@@ -381,7 +381,7 @@ double CCSDF12B::compute_energy()
     timer_on("ERI <ij|ab>");
     if (use_df_) {
         outfile->Printf("   [J_AB]^(-1)\n");
-        auto J_inv_AB = std::make_unique<Tensor<double, 3>>("Metric MO ([J_AB]^{-1})", naux_, nact_, nri_);
+        auto J_inv_AB = std::make_unique<Tensor<double, 3>>("Metric MO ([J_AB]^{-1})", naux_, nobs_, nri_);
         timer_on("Metric Integrals");
         form_metric_ints(J_inv_AB.get(), false);
         timer_off("Metric Integrals");
@@ -416,7 +416,7 @@ double CCSDF12B::compute_energy()
         outfile->Printf("\n ===> CCSD Iteration %d <===\n", iteration_);
         if (use_df_) {
             outfile->Printf("   [J_AB]^(-1)\n");
-            auto J_inv_AB = std::make_unique<Tensor<double, 3>>("Metric MO ([J_AB]^{-1})", naux_, nact_, nri_);
+            auto J_inv_AB = std::make_unique<Tensor<double, 3>>("Metric MO ([J_AB]^{-1})", naux_, nobs_, nri_);
             timer_on("Metric Integrals");
             form_metric_ints(J_inv_AB.get(), false);
             timer_off("Metric Integrals");
@@ -939,6 +939,7 @@ void DiskCCSDF12B::form_D_ijab(einsums::DiskTensor<double, 4> *D, einsums::DiskT
     for (size_t i = nfrzn_; i < nocc_; i++) {
         for (size_t j = nfrzn_; j < nocc_; j++) {
             auto D_view = (*D)(i - nfrzn_, j - nfrzn_, All, All);
+            D_view.zero();
             double e_ij = -1.0 * (f_view(i, i) + f_view(j, j));
 
             for (size_t a = nocc_; a < nobs_; a++) {
@@ -959,6 +960,7 @@ void DiskCCSDF12B::form_D_ia(einsums::DiskTensor<double, 2> *D, einsums::DiskTen
 #pragma omp parallel for collapse(2) num_threads(nthreads_)
     for (size_t i = nfrzn_; i < nocc_; i++) {
         auto D_view = (*D)(i - nfrzn_, All);
+        D_view.zero();
         for (size_t a = nocc_; a < nobs_; a++) {
             auto denom = f_view(a, a) - f_view(i, i);
             D_view(a - nocc_) = (1 / denom);
@@ -1098,7 +1100,7 @@ double DiskCCSDF12B::compute_energy() {
     auto F_KetBig = std::make_unique<DiskTensor<double, 4>>(state::data(), "MO F12 (ket) Tensor", nact_, nact_, nri_, nri_);
     auto F_BraBig = std::make_unique<DiskTensor<double, 4>>(state::data(), "MO F12 (bra) Tensor", nobs_, nobs_, nact_, nact_);
     auto F2 = std::make_unique<DiskTensor<double, 4>>(state::data(), "MO F12_Squared Tensor", nact_, nact_, nact_, nri_);
-    auto FG = std::make_unique<DiskTensor<double, 4>>(state::data(), "MO F12G12 Tensor", nobs_, nobs_, nobs_, nobs_);
+    auto FG = std::make_unique<DiskTensor<double, 4>>(state::data(), "MO F12G12 Tensor", nobs_, nobs_, nact_, nact_);
     auto Uf = std::make_unique<DiskTensor<double, 4>>(state::data(), "MO F12_DoubleCommutator Tensor", nact_, nact_, nact_, nact_);
     auto K = std::make_unique<DiskTensor<double, 4>>(state::data(), "MO K Tensor", nobs_, nobs_, nobs_, nobs_);
     auto J = std::make_unique<DiskTensor<double, 4>>(state::data(), "MO J Tensor", nobs_, nobs_, nobs_, nobs_);
@@ -1136,8 +1138,72 @@ double DiskCCSDF12B::compute_energy() {
         }
 
         timer_on("Metric Integrals");
-        auto J_inv_AB = std::make_unique<Tensor<double, 3>>("Metric MO ([J_AB]^{-1})", naux_, nact_, nri_);
+        auto J_inv_AB = std::make_unique<Tensor<double, 3>>("Metric MO ([J_AB]^{-1})", naux_, nobs_, nri_);
         form_metric_ints(J_inv_AB.get(), false);
+        {
+            double mean = 0.0;
+            double mean_ii = 0.0;
+            double mean_ia = 0.0;
+            double mean_ai = 0.0;
+            double mean_aa = 0.0;
+            double mean_ix = 0.0;
+            double mean_ax = 0.0;
+            double x_sq_sum = 0.0;
+            double x_sq_ii = 0.0;
+            double x_sq_ia = 0.0;
+            double x_sq_ai = 0.0;
+            double x_sq_aa = 0.0;
+            double x_sq_ix = 0.0;
+            double x_sq_ax = 0.0;
+            for (int alp = 0; alp < naux_; alp++) {
+                for (int p = 0; p < nobs_; p++) {
+                    for (int q = 0; q < nri_; q++) {
+                        mean += (*J_inv_AB)(alp, p, q);
+                        x_sq_sum += pow((*J_inv_AB)(alp, p, q), 2);
+                        if (p < nocc_ && q < nocc_) {
+                            mean_ii += (*J_inv_AB)(alp, p, q);
+                            x_sq_ii += pow((*J_inv_AB)(alp, p, q), 2);
+                        } else if (p < nocc_ && q >= nobs_) {
+                            mean_ix += (*J_inv_AB)(alp, p, q);
+                            x_sq_ix += pow((*J_inv_AB)(alp, p, q), 2);
+                        } else if (p < nocc_ && q >= nocc_) {
+                            mean_ia += (*J_inv_AB)(alp, p, q);
+                            x_sq_ia += pow((*J_inv_AB)(alp, p, q), 2);
+                        } else if (p >= nocc_ && q < nocc_) {
+                            mean_ai += (*J_inv_AB)(alp, p, q);
+                            x_sq_ai += pow((*J_inv_AB)(alp, p, q), 2);
+                        } else if (p >= nocc_ && q >= nobs_) {
+                            mean_ax += (*J_inv_AB)(alp, p, q);
+                            x_sq_ax += pow((*J_inv_AB)(alp, p, q), 2);
+                        } else {
+                            mean_aa += (*J_inv_AB)(alp, p, q);
+                            x_sq_aa += pow((*J_inv_AB)(alp, p, q), 2);
+                        } 
+                    }
+                }
+            }
+            mean /= (naux_ * nobs_ * nri_);
+            mean_ii /= (naux_ * nocc_ * nocc_);
+            mean_ia /= (naux_ * nocc_ * nvir_);
+            mean_ai /= (naux_ * nvir_ * nocc_);
+            mean_aa /= (naux_ * nvir_ * nvir_);
+            mean_ix /= (naux_ * nocc_ * ncabs_);
+            mean_ax /= (naux_ * nvir_ * ncabs_);
+            x_sq_sum /= (naux_ * nobs_ * nri_);
+            x_sq_ii /= (naux_ * nocc_ * nocc_);
+            x_sq_ia /= (naux_ * nocc_ * nvir_);
+            x_sq_ai /= (naux_ * nvir_ * nocc_);
+            x_sq_aa /= (naux_ * nvir_ * nvir_);
+            x_sq_ix /= (naux_ * nocc_ * ncabs_);
+            x_sq_ax /= (naux_ * nvir_ * ncabs_);
+            outfile->Printf("   J_inv_AB Mean: %e, Std. Dev.: %e\n", mean, sqrt(x_sq_sum - pow(mean, 2)));
+            outfile->Printf("   J_inv_AB (ii) Mean: %e, Std. Dev.: %e\n", mean_ii, sqrt(x_sq_ii - pow(mean_ii, 2)));
+            outfile->Printf("   J_inv_AB (ia) Mean: %e, Std. Dev.: %e\n", mean_ia, sqrt(x_sq_ia - pow(mean_ia, 2)));
+            outfile->Printf("   J_inv_AB (ai) Mean: %e, Std. Dev.: %e\n", mean_ai, sqrt(x_sq_ai - pow(mean_ai, 2)));
+            outfile->Printf("   J_inv_AB (aa) Mean: %e, Std. Dev.: %e\n", mean_aa, sqrt(x_sq_aa - pow(mean_aa, 2)));
+            outfile->Printf("   J_inv_AB (ix) Mean: %e, Std. Dev.: %e\n", mean_ix, sqrt(x_sq_ix - pow(mean_ix, 2)));
+            outfile->Printf("   J_inv_AB (ax) Mean: %e, Std. Dev.: %e\n", mean_ax, sqrt(x_sq_ax - pow(mean_ax, 2)));
+        }
         timer_off("Metric Integrals");
 
         for (int i = 0; i < teint.size(); i++){
@@ -1163,7 +1229,7 @@ double DiskCCSDF12B::compute_energy() {
                 outfile->Printf("   FG Integral\n");
                 timer_on("FG_12 Integral");
                 {
-                    DiskView<double, 4, 4>FGView{(*FG), Dim<4>{nobs_, nobs_, nobs_, nobs_}, Count<4>{nobs_, nobs_, nobs_, nobs_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}};
+                    DiskView<double, 4, 4>FGView{(*FG), Dim<4>{nobs_, nobs_, nact_, nact_}, Count<4>{nobs_, nobs_, nact_, nact_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}};
                     FGView.zero();
                 }
                 form_df_teints(teint[i], FG.get(), J_inv_AB.get());
@@ -1242,7 +1308,7 @@ double DiskCCSDF12B::compute_energy() {
                 form_teints(teint[i], F_BraBig.get());
                 timer_off("F_12 (Bra) Integral");
             } else if ( teint[i] == "F_Ket" ){
-                outfile->Printf("   FG Integral\n");
+                outfile->Printf("   F_12 (Ket) Integral\n");
                 timer_on("F_12 (Ket) Integral");
                 {
                     DiskView<double, 4, 4>F_KetView{(*F_KetBig), Dim<4>{nact_, nact_, nri_, nri_}, Count<4>{nact_, nact_, nri_, nri_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}};
@@ -1254,7 +1320,7 @@ double DiskCCSDF12B::compute_energy() {
                 outfile->Printf("   FG Integral\n");
                 timer_on("FG_12 Integral");
                 {
-                    DiskView<double, 4, 4>FGView{(*FG), Dim<4>{nobs_, nobs_, nobs_, nobs_}, Count<4>{nobs_, nobs_, nobs_, nobs_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}};
+                    DiskView<double, 4, 4>FGView{(*FG), Dim<4>{nobs_, nobs_, nact_, nact_}, Count<4>{nobs_, nobs_, nact_, nact_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}};
                     FGView.zero();
                 }
                 form_teints(teint[i], FG.get());
@@ -1321,19 +1387,19 @@ double DiskCCSDF12B::compute_energy() {
 
     /* Form the F12 Matrices */
     outfile->Printf("\n ===> Forming the F12 Intermediate Tensors <===\n");
-    auto D_Werner = std::make_unique<DiskTensor<double, 4>>(state::data(), "D (from Werner 1992) Intermediate Tensor", nact_, nact_, nobs_ - nfrzn_, nobs_ - nfrzn_);
+    /*auto D_Werner = std::make_unique<DiskTensor<double, 4>>(state::data(), "D (from Werner 1992) Intermediate Tensor", nact_, nact_, nobs_ - nfrzn_, nobs_ - nfrzn_);
     auto L_oovv = std::make_unique<DiskTensor<double, 4>>(state::data(), "L Intermediate Tensor (extra vir)", nact_, nact_, nvir_, nvir_);
     auto L_ooov = std::make_unique<DiskTensor<double, 4>>(state::data(), "L Intermediate Tensor (extra act)", nact_, nact_, nact_, nvir_);
     auto beta = std::make_unique<DiskTensor<double, 2>>(state::data(), "Constant matrix beta", nact_, nact_);
     auto A = std::make_unique<DiskTensor<double, 2>>(state::data(), "A Intermediate Tensor", nvir_, nvir_);
     auto s = std::make_unique<DiskTensor<double, 2>>(state::data(), "s Intermediate Tensor", nact_, nvir_);
-    auto r = std::make_unique<DiskTensor<double, 2>>(state::data(), "r Intermediate Tensor", nact_, nvir_);
+    auto r = std::make_unique<DiskTensor<double, 2>>(state::data(), "r Intermediate Tensor", nact_, nvir_);*/
     auto v_ia = std::make_unique<DiskTensor<double, 2>>(state::data(), "T1 Residual (v) Tensor", nact_, nvir_);
-    auto X_Werner = std::make_unique<DiskTensor<double, 2>>(state::data(), "X (from Werner 1992) Intermediate Tensor", nvir_, nvir_);
+    /*auto X_Werner = std::make_unique<DiskTensor<double, 2>>(state::data(), "X (from Werner 1992) Intermediate Tensor", nvir_, nvir_);
     auto Y_Werner = std::make_unique<DiskTensor<double, 4>>(state::data(), "Y (from Werner 1992) Intermediate Tensor", nact_, nact_, nvir_, nvir_);
     auto Z_Werner = std::make_unique<DiskTensor<double, 4>>(state::data(), "Z (from Werner 1992) Intermediate Tensor", nact_, nact_, nvir_, nvir_);
     auto alpha = std::make_unique<DiskTensor<double, 4>>(state::data(), "Constant matrix alpha", nact_, nact_, nact_, nact_);
-    auto G_ij = std::make_unique<DiskTensor<double, 4>>(state::data(), "G Intermediate Tensor", nact_, nact_, nvir_, nvir_);
+    auto G_ij = std::make_unique<DiskTensor<double, 4>>(state::data(), "G Intermediate Tensor", nact_, nact_, nvir_, nvir_);*/
     auto V_ijab = std::make_unique<DiskTensor<double, 4>>(state::data(), "T2 Residual (V) Tensor", nact_, nact_, nvir_, nvir_);
     auto t_ia = std::make_unique<DiskTensor<double, 2>>(state::data(), "T1 Amplitude Tensor", nact_, nvir_);
     auto T_ijab = std::make_unique<DiskTensor<double, 4>>(state::data(), "T2 Amplitude Tensor", nact_, nact_, nvir_, nvir_);
@@ -1403,6 +1469,9 @@ double DiskCCSDF12B::compute_energy() {
                 }
                 meanValue += abs(f_read(i, j));
                 x_squared += f_read(i, j) * f_read(i, j);
+                if (f_read(i, j) > 1e+2) {
+                    outfile->Printf("      Unusual Value: %e at (%d, %d)\n", f_read(i, j), i, j);
+                }
             }
         }
         meanValue /= nri_ * nri_;
@@ -1448,6 +1517,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int b = 0; b < nvir_; b++) {
                         meanValue += abs(D_ijab_view(i, j, a, b));
                         x_squared += D_ijab_view(i, j, a, b) * D_ijab_view(i, j, a, b);
+                        if (D_ijab_view(i, j, a, b) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", D_ijab_view(i, j, a, b), i, j, a, b);
+                        }
                     }
                 }
             }
@@ -1466,6 +1538,9 @@ double DiskCCSDF12B::compute_energy() {
             for (int a = 0; a < nvir_; a++) {
                 meanValue += abs(D_ia_view(i, a));
                 x_squared += D_ia_view(i, a) * D_ia_view(i, a);
+                if (D_ia_view(i, a) > 1e+2 || abs(D_ia_view(i, a)) < 1e-40) {
+                    outfile->Printf("      Unusual Value: %e at (%d, %d)\n", D_ia_view(i, a), i, a);
+                }
             }
         }
         meanValue /= nact_ * nvir_;
@@ -1521,6 +1596,9 @@ double DiskCCSDF12B::compute_energy() {
                         }
                         meanValue += abs(G_read(i, j, k, l));
                         x_squared += G_read(i, j, k, l) * G_read(i, j, k, l);
+                        if (G_read(i, j, k, l) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", G_read(i, j, k, l), i, j, k, l);
+                        }
                     }
                 }
             }
@@ -1558,6 +1636,9 @@ double DiskCCSDF12B::compute_energy() {
             for (int a = 0; a < nvir_; a++) {
                 meanValue += abs(t_ia_view(i, a));
                 x_squared += t_ia_view(i, a) * t_ia_view(i, a);
+                if (t_ia_view(i, a) > 1e+2) {
+                    outfile->Printf("      Unusual Value: %e at (%d, %d)\n", t_ia_view(i, a), i, a);
+                }
             }
         }
         meanValue /= nact_ * nvir_;
@@ -1574,6 +1655,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int b = 0; b < nvir_; b++) {
                         meanValue += abs(T_ijab_view(i, j, a, b));
                         x_squared += T_ijab_view(i, j, a, b) * T_ijab_view(i, j, a, b);
+                        if (T_ijab_view(i, j, a, b) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", T_ijab_view(i, j, a, b), i, j, a, b);
+                        }
                     }
                 }
             }
@@ -1599,6 +1683,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int b = 0; b < nvir_; b++) {
                         meanValue += abs(tau_view(i, j, a, b));
                         x_squared += tau_view(i, j, a, b) * tau_view(i, j, a, b);
+                        if (tau_view(i, j, a, b) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", tau_view(i, j, a, b), i, j, a, b);
+                        }
                     }
                 }
             }
@@ -1618,6 +1705,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int b = 0; b < nvir_; b++) {
                         meanValue += abs(taut_view(i, j, a, b));
                         x_squared += taut_view(i, j, a, b) * taut_view(i, j, a, b);
+                        if (taut_view(i, j, a, b) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", taut_view(i, j, a, b), i, j, a, b);
+                        }
                     }
                 }
             }
@@ -1628,165 +1718,168 @@ double DiskCCSDF12B::compute_energy() {
         timer_off("Form Tau");
     }
 
-    if (!(*L_oovv).existed() && !(*L_ooov).existed()) {
-
-        outfile->Printf("   Check K MO Tensor Data (pppp):\n");
-        auto K_read = (*K)(All, All, All, All); K_read.set_read_only(true);
-        double meanValue = 0.0;
-        double meanTrace = 0.0;
-        double mean_iiii = 0.0;
-        double mean_aiii = 0.0;
-        double mean_iaii = 0.0;
-        double mean_iiai = 0.0;
-        double mean_iiia = 0.0;
-        double mean_aaii = 0.0;
-        double mean_aiai = 0.0;
-        double mean_iaai = 0.0;
-        double mean_iaia = 0.0;
-        double mean_iiaa = 0.0;
-        double mean_aiia = 0.0;
-        double mean_aaai = 0.0;
-        double mean_aaia = 0.0;
-        double mean_aiaa = 0.0;
-        double mean_iaaa = 0.0;
-        double mean_aaaa = 0.0;
-        double x_squared = 0.0;
-        double x_sqTrace = 0.0;
-        double x_sq_iiii = 0.0;
-        double x_sq_aiii = 0.0;
-        double x_sq_iaii = 0.0;
-        double x_sq_iiai = 0.0;
-        double x_sq_iiia = 0.0;
-        double x_sq_aaii = 0.0;
-        double x_sq_aiai = 0.0;
-        double x_sq_iaai = 0.0;
-        double x_sq_iaia = 0.0;
-        double x_sq_iiaa = 0.0;
-        double x_sq_aiia = 0.0;
-        double x_sq_aaai = 0.0;
-        double x_sq_aaia = 0.0;
-        double x_sq_aiaa = 0.0;
-        double x_sq_iaaa = 0.0;
-        double x_sq_aaaa = 0.0;
-        for (int i = 0; i < nobs_; i++) {
-            for (int j = 0; j < nobs_; j++) {
-                for (int k = 0; k < nobs_; k++) {
-                    for (int l = 0; l < nobs_; l++) {
-                        if (i == j && j == k && k == l) {
-                            meanTrace += abs(K_read(i, j, k, l));
-                            x_sqTrace += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        }
-                        if (i < nocc_ && j < nocc_ && k < nocc_ && l < nocc_) {
-                            mean_iiii += abs(K_read(i, j, k, l));
-                            x_sq_iiii += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i >= nocc_ && j >= nocc_ && k >= nocc_ && l >= nocc_) {
-                            mean_aaaa += abs(K_read(i, j, k, l));
-                            x_sq_aaaa += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i >= nocc_ && j < nocc_ && k < nocc_ && l < nocc_) {
-                            mean_aiii += abs(K_read(i, j, k, l));
-                            x_sq_aiii += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i < nocc_ && j >= nocc_ && k < nocc_ && l < nocc_) {
-                            mean_iaii += abs(K_read(i, j, k, l));
-                            x_sq_iaii += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i < nocc_ && j < nocc_ && k >= nocc_ && l < nocc_) {
-                            mean_iiai += abs(K_read(i, j, k, l));
-                            x_sq_iiai += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i < nocc_ && j < nocc_ && k < nocc_ && l >= nocc_) {
-                            mean_iiia += abs(K_read(i, j, k, l));
-                            x_sq_iiia += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i < nocc_ && j >= nocc_ && k >= nocc_ && l >= nocc_) {
-                            mean_iaaa += abs(K_read(i, j, k, l));
-                            x_sq_iaaa += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i >= nocc_ && j < nocc_ && k >= nocc_ && l >= nocc_) {
-                            mean_aiaa += abs(K_read(i, j, k, l));
-                            x_sq_aiaa += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i >= nocc_ && j >= nocc_ && k < nocc_ && l >= nocc_) {
-                            mean_aaia += abs(K_read(i, j, k, l));
-                            x_sq_aaia += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i >= nocc_ && j >= nocc_ && k >= nocc_ && l < nocc_) {
-                            mean_aaai += abs(K_read(i, j, k, l));
-                            x_sq_aaai += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i >= nocc_ && j >= nocc_ && k < nocc_ && l < nocc_) {
-                            mean_aaii += abs(K_read(i, j, k, l));
-                            x_sq_aaii += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i >= nocc_ && j < nocc_ && k >= nocc_ && l < nocc_) {
-                            mean_aiai += abs(K_read(i, j, k, l));
-                            x_sq_aiai += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i < nocc_ && j >= nocc_ && k >= nocc_ && l < nocc_) {
-                            mean_iaai += abs(K_read(i, j, k, l));
-                            x_sq_iaai += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i < nocc_ && j < nocc_ && k >= nocc_ && l >= nocc_) {
-                            mean_iiaa += abs(K_read(i, j, k, l));
-                            x_sq_iiaa += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else if (i < nocc_ && j >= nocc_ && k < nocc_ && l >= nocc_) {
-                            mean_iaia += abs(K_read(i, j, k, l));
-                            x_sq_iaia += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        } else {
-                            mean_aiia += abs(K_read(i, j, k, l));
-                            x_sq_aiia += K_read(i, j, k, l) * K_read(i, j, k, l);
-                        }
-                        meanValue += abs(K_read(i, j, k, l));
-                        x_squared += K_read(i, j, k, l) * K_read(i, j, k, l);
+    outfile->Printf("   Check K MO Tensor Data (pppp):\n");
+    auto K_read = (*K)(All, All, All, All); K_read.set_read_only(true);
+    double meanValue = 0.0;
+    double meanTrace = 0.0;
+    double mean_iiii = 0.0;
+    double mean_aiii = 0.0;
+    double mean_iaii = 0.0;
+    double mean_iiai = 0.0;
+    double mean_iiia = 0.0;
+    double mean_aaii = 0.0;
+    double mean_aiai = 0.0;
+    double mean_iaai = 0.0;
+    double mean_iaia = 0.0;
+    double mean_iiaa = 0.0;
+    double mean_aiia = 0.0;
+    double mean_aaai = 0.0;
+    double mean_aaia = 0.0;
+    double mean_aiaa = 0.0;
+    double mean_iaaa = 0.0;
+    double mean_aaaa = 0.0;
+    double x_squared = 0.0;
+    double x_sqTrace = 0.0;
+    double x_sq_iiii = 0.0;
+    double x_sq_aiii = 0.0;
+    double x_sq_iaii = 0.0;
+    double x_sq_iiai = 0.0;
+    double x_sq_iiia = 0.0;
+    double x_sq_aaii = 0.0;
+    double x_sq_aiai = 0.0;
+    double x_sq_iaai = 0.0;
+    double x_sq_iaia = 0.0;
+    double x_sq_iiaa = 0.0;
+    double x_sq_aiia = 0.0;
+    double x_sq_aaai = 0.0;
+    double x_sq_aaia = 0.0;
+    double x_sq_aiaa = 0.0;
+    double x_sq_iaaa = 0.0;
+    double x_sq_aaaa = 0.0;
+    for (int i = 0; i < nobs_; i++) {
+        for (int j = 0; j < nobs_; j++) {
+            for (int k = 0; k < nobs_; k++) {
+                for (int l = 0; l < nobs_; l++) {
+                    if (i == j && j == k && k == l) {
+                        meanTrace += abs(K_read(i, j, k, l));
+                        x_sqTrace += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    }
+                    if (i < nocc_ && j < nocc_ && k < nocc_ && l < nocc_) {
+                        mean_iiii += abs(K_read(i, j, k, l));
+                        x_sq_iiii += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i >= nocc_ && j >= nocc_ && k >= nocc_ && l >= nocc_) {
+                        mean_aaaa += abs(K_read(i, j, k, l));
+                        x_sq_aaaa += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i >= nocc_ && j < nocc_ && k < nocc_ && l < nocc_) {
+                        mean_aiii += abs(K_read(i, j, k, l));
+                        x_sq_aiii += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i < nocc_ && j >= nocc_ && k < nocc_ && l < nocc_) {
+                        mean_iaii += abs(K_read(i, j, k, l));
+                        x_sq_iaii += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i < nocc_ && j < nocc_ && k >= nocc_ && l < nocc_) {
+                        mean_iiai += abs(K_read(i, j, k, l));
+                        x_sq_iiai += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i < nocc_ && j < nocc_ && k < nocc_ && l >= nocc_) {
+                        mean_iiia += abs(K_read(i, j, k, l));
+                        x_sq_iiia += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i < nocc_ && j >= nocc_ && k >= nocc_ && l >= nocc_) {
+                        mean_iaaa += abs(K_read(i, j, k, l));
+                        x_sq_iaaa += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i >= nocc_ && j < nocc_ && k >= nocc_ && l >= nocc_) {
+                        mean_aiaa += abs(K_read(i, j, k, l));
+                        x_sq_aiaa += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i >= nocc_ && j >= nocc_ && k < nocc_ && l >= nocc_) {
+                        mean_aaia += abs(K_read(i, j, k, l));
+                        x_sq_aaia += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i >= nocc_ && j >= nocc_ && k >= nocc_ && l < nocc_) {
+                        mean_aaai += abs(K_read(i, j, k, l));
+                        x_sq_aaai += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i >= nocc_ && j >= nocc_ && k < nocc_ && l < nocc_) {
+                        mean_aaii += abs(K_read(i, j, k, l));
+                        x_sq_aaii += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i >= nocc_ && j < nocc_ && k >= nocc_ && l < nocc_) {
+                        mean_aiai += abs(K_read(i, j, k, l));
+                        x_sq_aiai += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i < nocc_ && j >= nocc_ && k >= nocc_ && l < nocc_) {
+                        mean_iaai += abs(K_read(i, j, k, l));
+                        x_sq_iaai += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i < nocc_ && j < nocc_ && k >= nocc_ && l >= nocc_) {
+                        mean_iiaa += abs(K_read(i, j, k, l));
+                        x_sq_iiaa += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else if (i < nocc_ && j >= nocc_ && k < nocc_ && l >= nocc_) {
+                        mean_iaia += abs(K_read(i, j, k, l));
+                        x_sq_iaia += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    } else {
+                        mean_aiia += abs(K_read(i, j, k, l));
+                        x_sq_aiia += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    }
+                    meanValue += abs(K_read(i, j, k, l));
+                    x_squared += K_read(i, j, k, l) * K_read(i, j, k, l);
+                    if (K_read(i, j, k, l) > 1e+2) {
+                        outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", K_read(i, j, k, l), i, j, k, l);
                     }
                 }
             }
         }
+    }
 
-        meanValue /= nobs_ * nobs_ * nobs_ * nobs_;
-        meanTrace /= nobs_;
-        mean_iiii /= nocc_ * nocc_ * nocc_ * nocc_;
-        mean_aiii /= nocc_ * nocc_ * nocc_ * nvir_;
-        mean_iaii /= nocc_ * nocc_ * nocc_ * nvir_;
-        mean_iiai /= nocc_ * nocc_ * nocc_ * nvir_;
-        mean_iiia /= nocc_ * nocc_ * nocc_ * nvir_;
-        mean_aaii /= nvir_ * nocc_ * nvir_ * nocc_;
-        mean_aiai /= nvir_ * nocc_ * nvir_ * nocc_;
-        mean_iaai /= nvir_ * nocc_ * nvir_ * nocc_;
-        mean_iaia /= nvir_ * nocc_ * nvir_ * nocc_;
-        mean_iiaa /= nvir_ * nocc_ * nvir_ * nocc_;
-        mean_aiia /= nvir_ * nocc_ * nvir_ * nocc_;
-        mean_aaai /= nvir_ * nvir_ * nvir_ * nocc_;
-        mean_aaia /= nvir_ * nvir_ * nvir_ * nocc_;
-        mean_aiaa /= nvir_ * nvir_ * nvir_ * nocc_;
-        mean_iaaa /= nvir_ * nvir_ * nvir_ * nocc_;
-        mean_aaaa /= nvir_ * nvir_ * nvir_ * nvir_;
-        x_squared /= nobs_ * nobs_ * nobs_ * nobs_;
-        x_sqTrace /= nobs_;
-        x_sq_iiii /= nocc_ * nocc_ * nocc_ * nocc_;
-        x_sq_aiii /= nocc_ * nocc_ * nocc_ * nvir_;
-        x_sq_iaii /= nocc_ * nocc_ * nocc_ * nvir_;
-        x_sq_iiai /= nocc_ * nocc_ * nocc_ * nvir_;
-        x_sq_iiia /= nocc_ * nocc_ * nocc_ * nvir_;
-        x_sq_aaii /= nvir_ * nocc_ * nvir_ * nocc_;
-        x_sq_aiai /= nvir_ * nocc_ * nvir_ * nocc_;
-        x_sq_iaai /= nvir_ * nocc_ * nvir_ * nocc_;
-        x_sq_iaia /= nvir_ * nocc_ * nvir_ * nocc_;
-        x_sq_iiaa /= nvir_ * nocc_ * nvir_ * nocc_;
-        x_sq_aiia /= nvir_ * nocc_ * nvir_ * nocc_;
-        x_sq_aaai /= nvir_ * nvir_ * nvir_ * nocc_;
-        x_sq_aaia /= nvir_ * nvir_ * nvir_ * nocc_;
-        x_sq_aiaa /= nvir_ * nvir_ * nvir_ * nocc_;
-        x_sq_iaaa /= nvir_ * nvir_ * nvir_ * nocc_;
-        x_sq_aaaa /= nvir_ * nvir_ * nvir_ * nvir_;
-        outfile->Printf("      Mean Value: %e, Standard Deviation: %e, Variance: %e\n", meanValue, sqrt(x_squared - meanValue * meanValue), x_squared - meanValue * meanValue);
-        outfile->Printf("      Mean Value (Trace): %e, Standard Deviation: %e, Variance: %e\n", meanTrace, sqrt(x_sqTrace - meanTrace * meanTrace), x_sqTrace - meanTrace * meanTrace);
-        outfile->Printf("      Mean Value (iiii): %e, Standard Deviation: %e, Variance: %e\n", mean_iiii, sqrt(x_sq_iiii - mean_iiii * mean_iiii), x_sq_iiii - mean_iiii * mean_iiii);
-        outfile->Printf("      Mean Value (aiii): %e, Standard Deviation: %e, Variance: %e\n", mean_aiii, sqrt(x_sq_aiii - mean_aiii * mean_aiii), x_sq_aiii - mean_aiii * mean_aiii);
-        outfile->Printf("      Mean Value (iaii): %e, Standard Deviation: %e, Variance: %e\n", mean_iaii, sqrt(x_sq_iaii - mean_iaii * mean_iaii), x_sq_iaii - mean_iaii * mean_iaii);
-        outfile->Printf("      Mean Value (iiai): %e, Standard Deviation: %e, Variance: %e\n", mean_iiai, sqrt(x_sq_iiai - mean_iiai * mean_iiai), x_sq_iiai - mean_iiai * mean_iiai);
-        outfile->Printf("      Mean Value (iiia): %e, Standard Deviation: %e, Variance: %e\n", mean_iiia, sqrt(x_sq_iiia - mean_iiia * mean_iiia), x_sq_iiia - mean_iiia * mean_iiia);
-        outfile->Printf("      Mean Value (aaii): %e, Standard Deviation: %e, Variance: %e\n", mean_aaii, sqrt(x_sq_aaii - mean_aaii * mean_aaii), x_sq_aaii - mean_aaii * mean_aaii);
-        outfile->Printf("      Mean Value (aiai): %e, Standard Deviation: %e, Variance: %e\n", mean_aiai, sqrt(x_sq_aiai - mean_aiai * mean_aiai), x_sq_aiai - mean_aiai * mean_aiai);
-        outfile->Printf("      Mean Value (iaai): %e, Standard Deviation: %e, Variance: %e\n", mean_iaai, sqrt(x_sq_iaai - mean_iaai * mean_iaai), x_sq_iaai - mean_iaai * mean_iaai);
-        outfile->Printf("      Mean Value (iaia): %e, Standard Deviation: %e, Variance: %e\n", mean_iaia, sqrt(x_sq_iaia - mean_iaia * mean_iaia), x_sq_iaia - mean_iaia * mean_iaia);
-        outfile->Printf("      Mean Value (iiaa): %e, Standard Deviation: %e, Variance: %e\n", mean_iiaa, sqrt(x_sq_iiaa - mean_iiaa * mean_iiaa), x_sq_iiaa - mean_iiaa * mean_iiaa);
-        outfile->Printf("      Mean Value (aiia): %e, Standard Deviation: %e, Variance: %e\n", mean_aiia, sqrt(x_sq_aiia - mean_aiia * mean_aiia), x_sq_aiia - mean_aiia * mean_aiia);
-        outfile->Printf("      Mean Value (aaai): %e, Standard Deviation: %e, Variance: %e\n", mean_aaai, sqrt(x_sq_aaai - mean_aaai * mean_aaai), x_sq_aaai - mean_aaai * mean_aaai);
-        outfile->Printf("      Mean Value (aaia): %e, Standard Deviation: %e, Variance: %e\n", mean_aaia, sqrt(x_sq_aaia - mean_aaia * mean_aaia), x_sq_aaia - mean_aaia * mean_aaia);
-        outfile->Printf("      Mean Value (aiaa): %e, Standard Deviation: %e, Variance: %e\n", mean_aiaa, sqrt(x_sq_aiaa - mean_aiaa * mean_aiaa), x_sq_aiaa - mean_aiaa * mean_aiaa);
-        outfile->Printf("      Mean Value (iaaa): %e, Standard Deviation: %e, Variance: %e\n", mean_iaaa, sqrt(x_sq_iaaa - mean_iaaa * mean_iaaa), x_sq_iaaa - mean_iaaa * mean_iaaa);
-        outfile->Printf("      Mean Value (aaaa): %e, Standard Deviation: %e, Variance: %e\n", mean_aaaa, sqrt(x_sq_aaaa - mean_aaaa * mean_aaaa), x_sq_aaaa - mean_aaaa * mean_aaaa);
+    meanValue /= nobs_ * nobs_ * nobs_ * nobs_;
+    meanTrace /= nobs_;
+    mean_iiii /= nocc_ * nocc_ * nocc_ * nocc_;
+    mean_aiii /= nocc_ * nocc_ * nocc_ * nvir_;
+    mean_iaii /= nocc_ * nocc_ * nocc_ * nvir_;
+    mean_iiai /= nocc_ * nocc_ * nocc_ * nvir_;
+    mean_iiia /= nocc_ * nocc_ * nocc_ * nvir_;
+    mean_aaii /= nvir_ * nocc_ * nvir_ * nocc_;
+    mean_aiai /= nvir_ * nocc_ * nvir_ * nocc_;
+    mean_iaai /= nvir_ * nocc_ * nvir_ * nocc_;
+    mean_iaia /= nvir_ * nocc_ * nvir_ * nocc_;
+    mean_iiaa /= nvir_ * nocc_ * nvir_ * nocc_;
+    mean_aiia /= nvir_ * nocc_ * nvir_ * nocc_;
+    mean_aaai /= nvir_ * nvir_ * nvir_ * nocc_;
+    mean_aaia /= nvir_ * nvir_ * nvir_ * nocc_;
+    mean_aiaa /= nvir_ * nvir_ * nvir_ * nocc_;
+    mean_iaaa /= nvir_ * nvir_ * nvir_ * nocc_;
+    mean_aaaa /= nvir_ * nvir_ * nvir_ * nvir_;
+    x_squared /= nobs_ * nobs_ * nobs_ * nobs_;
+    x_sqTrace /= nobs_;
+    x_sq_iiii /= nocc_ * nocc_ * nocc_ * nocc_;
+    x_sq_aiii /= nocc_ * nocc_ * nocc_ * nvir_;
+    x_sq_iaii /= nocc_ * nocc_ * nocc_ * nvir_;
+    x_sq_iiai /= nocc_ * nocc_ * nocc_ * nvir_;
+    x_sq_iiia /= nocc_ * nocc_ * nocc_ * nvir_;
+    x_sq_aaii /= nvir_ * nocc_ * nvir_ * nocc_;
+    x_sq_aiai /= nvir_ * nocc_ * nvir_ * nocc_;
+    x_sq_iaai /= nvir_ * nocc_ * nvir_ * nocc_;
+    x_sq_iaia /= nvir_ * nocc_ * nvir_ * nocc_;
+    x_sq_iiaa /= nvir_ * nocc_ * nvir_ * nocc_;
+    x_sq_aiia /= nvir_ * nocc_ * nvir_ * nocc_;
+    x_sq_aaai /= nvir_ * nvir_ * nvir_ * nocc_;
+    x_sq_aaia /= nvir_ * nvir_ * nvir_ * nocc_;
+    x_sq_aiaa /= nvir_ * nvir_ * nvir_ * nocc_;
+    x_sq_iaaa /= nvir_ * nvir_ * nvir_ * nocc_;
+    x_sq_aaaa /= nvir_ * nvir_ * nvir_ * nvir_;
+    outfile->Printf("      Mean Value: %e, Standard Deviation: %e, Variance: %e\n", meanValue, sqrt(x_squared - meanValue * meanValue), x_squared - meanValue * meanValue);
+    outfile->Printf("      Mean Value (Trace): %e, Standard Deviation: %e, Variance: %e\n", meanTrace, sqrt(x_sqTrace - meanTrace * meanTrace), x_sqTrace - meanTrace * meanTrace);
+    outfile->Printf("      Mean Value (iiii): %e, Standard Deviation: %e, Variance: %e\n", mean_iiii, sqrt(x_sq_iiii - mean_iiii * mean_iiii), x_sq_iiii - mean_iiii * mean_iiii);
+    outfile->Printf("      Mean Value (aiii): %e, Standard Deviation: %e, Variance: %e\n", mean_aiii, sqrt(x_sq_aiii - mean_aiii * mean_aiii), x_sq_aiii - mean_aiii * mean_aiii);
+    outfile->Printf("      Mean Value (iaii): %e, Standard Deviation: %e, Variance: %e\n", mean_iaii, sqrt(x_sq_iaii - mean_iaii * mean_iaii), x_sq_iaii - mean_iaii * mean_iaii);
+    outfile->Printf("      Mean Value (iiai): %e, Standard Deviation: %e, Variance: %e\n", mean_iiai, sqrt(x_sq_iiai - mean_iiai * mean_iiai), x_sq_iiai - mean_iiai * mean_iiai);
+    outfile->Printf("      Mean Value (iiia): %e, Standard Deviation: %e, Variance: %e\n", mean_iiia, sqrt(x_sq_iiia - mean_iiia * mean_iiia), x_sq_iiia - mean_iiia * mean_iiia);
+    outfile->Printf("      Mean Value (aaii): %e, Standard Deviation: %e, Variance: %e\n", mean_aaii, sqrt(x_sq_aaii - mean_aaii * mean_aaii), x_sq_aaii - mean_aaii * mean_aaii);
+    outfile->Printf("      Mean Value (aiai): %e, Standard Deviation: %e, Variance: %e\n", mean_aiai, sqrt(x_sq_aiai - mean_aiai * mean_aiai), x_sq_aiai - mean_aiai * mean_aiai);
+    outfile->Printf("      Mean Value (iaai): %e, Standard Deviation: %e, Variance: %e\n", mean_iaai, sqrt(x_sq_iaai - mean_iaai * mean_iaai), x_sq_iaai - mean_iaai * mean_iaai);
+    outfile->Printf("      Mean Value (iaia): %e, Standard Deviation: %e, Variance: %e\n", mean_iaia, sqrt(x_sq_iaia - mean_iaia * mean_iaia), x_sq_iaia - mean_iaia * mean_iaia);
+    outfile->Printf("      Mean Value (iiaa): %e, Standard Deviation: %e, Variance: %e\n", mean_iiaa, sqrt(x_sq_iiaa - mean_iiaa * mean_iiaa), x_sq_iiaa - mean_iiaa * mean_iiaa);
+    outfile->Printf("      Mean Value (aiia): %e, Standard Deviation: %e, Variance: %e\n", mean_aiia, sqrt(x_sq_aiia - mean_aiia * mean_aiia), x_sq_aiia - mean_aiia * mean_aiia);
+    outfile->Printf("      Mean Value (aaai): %e, Standard Deviation: %e, Variance: %e\n", mean_aaai, sqrt(x_sq_aaai - mean_aaai * mean_aaai), x_sq_aaai - mean_aaai * mean_aaai);
+    outfile->Printf("      Mean Value (aaia): %e, Standard Deviation: %e, Variance: %e\n", mean_aaia, sqrt(x_sq_aaia - mean_aaia * mean_aaia), x_sq_aaia - mean_aaia * mean_aaia);
+    outfile->Printf("      Mean Value (aiaa): %e, Standard Deviation: %e, Variance: %e\n", mean_aiaa, sqrt(x_sq_aiaa - mean_aiaa * mean_aiaa), x_sq_aiaa - mean_aiaa * mean_aiaa);
+    outfile->Printf("      Mean Value (iaaa): %e, Standard Deviation: %e, Variance: %e\n", mean_iaaa, sqrt(x_sq_iaaa - mean_iaaa * mean_iaaa), x_sq_iaaa - mean_iaaa * mean_iaaa);
+    outfile->Printf("      Mean Value (aaaa): %e, Standard Deviation: %e, Variance: %e\n", mean_aaaa, sqrt(x_sq_aaaa - mean_aaaa * mean_aaaa), x_sq_aaaa - mean_aaaa * mean_aaaa);
 
+    /* Not following this method temporarily
+    if (!(*L_oovv).existed() && !(*L_ooov).existed()) {
         outfile->Printf("   L Intermediate\n");
         timer_on("L Intermediate");
         form_L(L_oovv.get(), L_ooov.get(), K.get());
@@ -1801,6 +1894,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int b = 0; b < nvir_; b++) {
                         meanValue += abs(L_oovv_view(i, j, a, b));
                         x_squared += L_oovv_view(i, j, a, b) * L_oovv_view(i, j, a, b);
+                        if (L_oovv_view(i, j, a, b) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", L_oovv_view(i, j, a, b), i, j, a, b);
+                        }
                     }
                 }
             }
@@ -1819,6 +1915,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int a = 0; a < nvir_; a++) {
                         meanValue += abs(L_ooov_view(i, j, k, a));
                         x_squared += L_ooov_view(i, j, k, a) * L_ooov_view(i, j, k, a);
+                        if (L_ooov_view(i, j, k, a) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", L_ooov_view(i, j, k, a), i, j, k, a);
+                        }
                     }
                 }
             }
@@ -1828,7 +1927,7 @@ double DiskCCSDF12B::compute_energy() {
         outfile->Printf("      Mean Value: %e, Standard Deviation: %e\n", meanValue, sqrt(x_squared - meanValue * meanValue));
 
         timer_off("L Intermediate");
-    }
+    }//*/
 
     if (!(*C).existed()) {
         timer_on("C Intermediate");
@@ -1888,6 +1987,9 @@ double DiskCCSDF12B::compute_energy() {
                         }
                         meanValue += abs(F_read(i, j, k, l));
                         x_squared += F_read(i, j, k, l) * F_read(i, j, k, l);
+                        if (F_read(i, j, k, l) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", F_read(i, j, k, l), i, j, k, l);
+                        }
                     }
                 }
             }
@@ -1936,6 +2038,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int l = 0; l < nvir_; l++) {
                         meanValue += abs(C_view(i, j, k, l));
                         x_squared += C_view(i, j, k, l) * C_view(i, j, k, l);
+                        if (C_view(i, j, k, l) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", C_view(i, j, k, l), i, j, k, l);
+                        }
                     }
                 }
             }
@@ -1960,6 +2065,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int l = 0; l < nact_; l++) {
                         meanValue += abs(FG_View(i, j, k, l));
                         x_squared += FG_View(i, j, k, l) * FG_View(i, j, k, l);
+                        if (FG_View(i, j, k, l) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", FG_View(i, j, k, l), i, j, k, l);
+                        }
                     }
                 }
             }
@@ -1979,6 +2087,9 @@ double DiskCCSDF12B::compute_energy() {
                     for (int l = 0; l < nact_; l++) {
                         meanValue += abs(V_View(i, j, k, l));
                         x_squared += V_View(i, j, k, l) * V_View(i, j, k, l);
+                        if (V_View(i, j, k, l) > 1e+2) {
+                            outfile->Printf("      Unusual Value: %e at (%d, %d, %d, %d)\n", V_View(i, j, k, l), i, j, k, l);
+                        }
                     }
                 }
             }
@@ -2019,9 +2130,10 @@ double DiskCCSDF12B::compute_energy() {
         }
         */
     
+        /* New Method
         outfile->Printf("   D (from Werner 1992) Intermediate\n");
         timer_on("D (from Werner 1992) Intermediate");
-        form_D_Werner(D_Werner.get(), tau.get(), t_ia.get());
+        form_D_Werner(D_Werner.get(), tau.get(), t_ia.get());//*/
         double meanValue = 0.0;
         double mean_ii = 0.0;
         double mean_ia = 0.0;
@@ -2030,7 +2142,7 @@ double DiskCCSDF12B::compute_energy() {
         double x_sq_ii = 0.0;
         double x_sq_ia = 0.0;
         double x_sq_aa = 0.0;
-        DiskView<double, 4, 4> D_Werner_view{(*D_Werner), Dim<4>{nact_, nact_, nobs_-nfrzn_, nobs_-nfrzn_}, Count<4>{nact_, nact_, nobs_-nfrzn_, nobs_-nfrzn_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; D_Werner_view.set_read_only(true);
+        /*DiskView<double, 4, 4> D_Werner_view{(*D_Werner), Dim<4>{nact_, nact_, nobs_-nfrzn_, nobs_-nfrzn_}, Count<4>{nact_, nact_, nobs_-nfrzn_, nobs_-nfrzn_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; D_Werner_view.set_read_only(true);
         for (int i = 0; i < nact_; i++) {
             for (int j = 0; j < nact_; j++) {
                 for (int a = 0; a < nobs_-nfrzn_; a++) {
@@ -2063,7 +2175,7 @@ double DiskCCSDF12B::compute_energy() {
         outfile->Printf("      Mean Value (ii): %e, Standard Deviation: %e\n", mean_ii, sqrt(x_sq_ii - mean_ii * mean_ii));
         outfile->Printf("      Mean Value (ia): %e, Standard Deviation: %e\n", mean_ia, sqrt(x_sq_ia - mean_ia * mean_ia));
         outfile->Printf("      Mean Value (aa): %e, Standard Deviation: %e\n", mean_aa, sqrt(x_sq_aa - mean_aa * mean_aa));
-        timer_off("D (from Werner 1992) Intermediate");
+        timer_off("D (from Werner 1992) Intermediate");//*/
 
         /*
         outfile->Printf("   B Intermediate\n");
@@ -2112,6 +2224,7 @@ double DiskCCSDF12B::compute_energy() {
             }
         }*/
 
+        /*
         outfile->Printf("   Constant matrix beta\n");
         timer_on("Constant matrix beta");
         form_beta(beta.get(), f.get(), t_ia.get(), tau.get(), L_oovv.get(), L_ooov.get());
@@ -2178,11 +2291,12 @@ double DiskCCSDF12B::compute_energy() {
         meanValue /= nact_ * nvir_;
         x_squared /= nact_ * nvir_;
         outfile->Printf("      Mean Value: %e, Standard Deviation: %e\n", meanValue, sqrt(x_squared - meanValue * meanValue));
-        timer_off("r Intermediate");
+        timer_off("r Intermediate");//*/
 
         outfile->Printf("   T1 Residual (v) Tensor\n");
         timer_on("T1 Residual (v) Tensor");
-        form_v_ia(v_ia.get(), T_ijab.get(), t_ia.get(), beta.get(), r.get(), s.get());
+        //form_v_ia(v_ia.get(), T_ijab.get(), t_ia.get(), beta.get(), r.get(), s.get());
+        form_Scuseria_via(v_ia.get(), T_ijab.get(), t_ia.get(), f.get(), J.get());
         meanValue = 0.0;
         x_squared = 0.0;
         DiskView<double, 2, 2> v_ia_view{(*v_ia), Dim<2>{nact_, nvir_}, Count<2>{nact_, nvir_}, Offset<2>{0, 0}, Stride<2>{1, 1}}; v_ia_view.set_read_only(true);
@@ -2207,6 +2321,10 @@ double DiskCCSDF12B::compute_energy() {
             for (int a = 0; a < nvir_; a++) {
                 meanValue += abs(t_ia_view(i, a));
                 x_squared += t_ia_view(i, a) * t_ia_view(i, a);
+                //Check if t_ia is real and appropriately sized
+                if (abs(t_ia_view(i, a)) < 1.0e-40 || isnan((double)t_ia_view(i, a))) {
+                    outfile->Printf("      Unusual Value for t: %e at (%d, %d)\n", t_ia_view(i, a), i, a);
+                }
             }
         }
         meanValue /= nact_ * nvir_;
@@ -2226,6 +2344,7 @@ double DiskCCSDF12B::compute_energy() {
                     for (int b = 0; b < nvir_; b++) {
                         meanValue += abs(tau_view(i, j, a, b));
                         x_squared += tau_view(i, j, a, b) * tau_view(i, j, a, b);
+
                     }
                 }
             }
@@ -2251,8 +2370,8 @@ double DiskCCSDF12B::compute_energy() {
         meanValue /= nact_ * nact_ * nvir_ * nvir_;
         x_squared /= nact_ * nact_ * nvir_ * nvir_;
         outfile->Printf("      Mean Value: %e, Standard Deviation: %e\n", meanValue, sqrt(x_squared - meanValue * meanValue));
-
         timer_off("Update Tau and Tau Tilde");
+        /*
 
         outfile->Printf("   D (from Werner 1992) Intermediate\n");
         timer_on("D (from Werner 1992) Intermediate");
@@ -2349,7 +2468,7 @@ double DiskCCSDF12B::compute_energy() {
         meanValue /= nact_ * nvir_;
         x_squared /= nact_ * nvir_;
         outfile->Printf("      Mean Value: %e, Standard Deviation: %e\n", meanValue, sqrt(x_squared - meanValue * meanValue));
-        timer_off("r Intermediate");
+        timer_off("r Intermediate");//*/
 
         outfile->Printf("   Check J MO Tensor (pppp)\n");
         meanValue = 0.0;
@@ -2387,65 +2506,256 @@ double DiskCCSDF12B::compute_energy() {
         double x_sq_aaai = 0.0;
         double x_sq_aaaa = 0.0;
         auto J_view = (*J)(All, All, All, All); J_view.set_read_only(true);
+        bool J_pqrs_pqsr = true;
+        bool J_pqrs_psrq = true;
+        bool J_pqrs_prqs = true;
+        bool J_pqrs_qprs = true;
+        bool J_pqrs_qpsr = true;
+        bool J_pqrs_rspq = true;
+        bool J_pqrs_rqps = true;
+        bool J_pqrs_sqrp = true;
         for (int i = 0; i < nobs_; i++) {
-            for (int j = 0; j < nobs_; j++) {
-                for (int k = 0; k < nobs_; k++) {
+            for (int q = 0; q < nobs_; q++) {
+                for (int r = 0; r < nobs_; r++) {
                     for (int l = 0; l < nobs_; l++) {
-                        meanValue += abs(J_view(i, j, k, l));
-                        x_squared += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        if (i < nocc_ && j < nocc_ && k < nocc_ && l < nocc_) {
-                            mean_iiii += abs(J_view(i, j, k, l));
-                            x_sq_iiii += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i < nocc_ && j < nocc_ && k < nocc_ && l >= nocc_) {
-                            mean_iiia += abs(J_view(i, j, k, l));
-                            x_sq_iiia += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i < nocc_ && j < nocc_ && k >= nocc_ && l < nocc_) {
-                            mean_iiai += abs(J_view(i, j, k, l));
-                            x_sq_iiai += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i < nocc_ && j >= nocc_ && k < nocc_ && l < nocc_) {
-                            mean_iaii += abs(J_view(i, j, k, l));
-                            x_sq_iaii += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i >= nocc_ && j < nocc_ && k < nocc_ && l < nocc_) {
-                            mean_aiii += abs(J_view(i, j, k, l));
-                            x_sq_aiii += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i < nocc_ && j >= nocc_ && k >= nocc_ && l >= nocc_) {
-                            mean_iaaa += abs(J_view(i, j, k, l));
-                            x_sq_iaaa += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i >= nocc_ && j < nocc_ && k >= nocc_ && l >= nocc_) {
-                            mean_aiaa += abs(J_view(i, j, k, l));
-                            x_sq_aiaa += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i >= nocc_ && j >= nocc_ && k < nocc_ && l >= nocc_) {
-                            mean_aaia += abs(J_view(i, j, k, l));
-                            x_sq_aaia += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i >= nocc_ && j >= nocc_ && k >= nocc_ && l < nocc_) {
-                            mean_aaai += abs(J_view(i, j, k, l));
-                            x_sq_aaai += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i >= nocc_ && j >= nocc_ && k >= nocc_ && l >= nocc_) {
-                            mean_aaaa += abs(J_view(i, j, k, l));
-                            x_sq_aaaa += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i >= nocc_ && j >= nocc_ && k < nocc_ && l < nocc_) {
-                            mean_aaii += abs(J_view(i, j, k, l));
-                            x_sq_aaii += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i >= nocc_ && j < nocc_ && k < nocc_ && l >= nocc_) {
-                            mean_aiia += abs(J_view(i, j, k, l));
-                            x_sq_aiia += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i < nocc_ && j >= nocc_ && k >= nocc_ && l < nocc_) {
-                            mean_iaai += abs(J_view(i, j, k, l));
-                            x_sq_iaai += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i >= nocc_ && j < nocc_ && k >= nocc_ && l < nocc_) {
-                            mean_aiai += abs(J_view(i, j, k, l));
-                            x_sq_aiai += J_view(i, j, k, l) * J_view(i, j, k, l);
-                        } else if (i < nocc_ && j >= nocc_ && k < nocc_ && l >= nocc_) {
-                            mean_iaia += abs(J_view(i, j, k, l));
-                            x_sq_iaia += J_view(i, j, k, l) * J_view(i, j, k, l);
+                        meanValue += abs(J_view(i, q, r, l));
+                        x_squared += J_view(i, q, r, l) * J_view(i, q, r, l);
+                        if (i < nocc_ && q < nocc_ && r < nocc_ && l < nocc_) {
+                            mean_iiii += abs(J_view(i, q, r, l));
+                            x_sq_iiii += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, q, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_pqsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(i, l, r, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_psrq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(i, r, q, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_prqs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, r, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qprs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qpsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, q, i, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rqps = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(l, q, r, i)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_sqrp = false;
+                            }
+                        } else if (i < nocc_ && q < nocc_ && r < nocc_ && l >= nocc_) {
+                            mean_iiia += abs(J_view(i, q, r, l));
+                            x_sq_iiia += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, r, q, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_prqs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, r, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qprs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, q, i, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rqps = false;
+                            }
+                        } else if (i < nocc_ && q < nocc_ && r >= nocc_ && l < nocc_) {
+                            mean_iiai += abs(J_view(i, q, r, l));
+                            x_sq_iiai += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, l, r, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_psrq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, r, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qprs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(l, q, r, i)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_sqrp = false;
+                            }
+                        } else if (i < nocc_ && q >= nocc_ && r < nocc_ && l < nocc_) {
+                            mean_iaii += abs(J_view(i, q, r, l));
+                            x_sq_iaii += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, q, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_pqsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, q, i, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rqps = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(l, q, r, i)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_sqrp = false;
+                            }
+                        } else if (i >= nocc_ && q < nocc_ && r < nocc_ && l < nocc_) {
+                            mean_aiii += abs(J_view(i, q, r, l));
+                            x_sq_aiii += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, q, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_pqsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(i, l, r, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_psrq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(i, r, q, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_prqs = false;
+                            }
+                        } else if (i < nocc_ && q >= nocc_ && r >= nocc_ && l >= nocc_) {
+                            mean_iaaa += abs(J_view(i, q, r, l));
+                            x_sq_iaaa += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, q, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_pqsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(i, l, r, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_psrq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(i, r, q, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_prqs = false;
+                            }
+                        } else if (i >= nocc_ && q < nocc_ && r >= nocc_ && l >= nocc_) {
+                            mean_aiaa += abs(J_view(i, q, r, l));
+                            x_sq_aiaa += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, q, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_pqsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, q, i, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rqps = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(l, q, r, i)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_sqrp = false;
+                            }
+                        } else if (i >= nocc_ && q >= nocc_ && r < nocc_ && l >= nocc_) {
+                            mean_aaia += abs(J_view(i, q, r, l));
+                            x_sq_aaia += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, l, r, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_psrq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, r, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qprs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(l, q, r, i)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_sqrp = false;
+                            }
+                        } else if (i >= nocc_ && q >= nocc_ && r >= nocc_ && l < nocc_) {
+                            mean_aaai += abs(J_view(i, q, r, l));
+                            x_sq_aaai += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, r, q, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_prqs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, r, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qprs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, q, i, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rqps = false;
+                            }
+                        } else if (i >= nocc_ && q >= nocc_ && r >= nocc_ && l >= nocc_) {
+                            mean_aaaa += abs(J_view(i, q, r, l));
+                            x_sq_aaaa += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, q, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_pqsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(i, l, r, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_psrq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(i, r, q, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_prqs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, r, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qprs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qpsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, l, i, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rspq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, q, i, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rqps = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(l, q, r, i)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_sqrp = false;
+                            }
+                        } else if (i >= nocc_ && q >= nocc_ && r < nocc_ && l < nocc_) {
+                            mean_aaii += abs(J_view(i, q, r, l));
+                            x_sq_aaii += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, q, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_pqsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, r, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qprs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qpsr = false;
+                            }
+                        } else if (i >= nocc_ && q < nocc_ && r < nocc_ && l >= nocc_) {
+                            mean_aiia += abs(J_view(i, q, r, l));
+                            x_sq_aiia += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, r, q, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_prqs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(l, q, r, i)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_sqrp = false;
+                            }
+                        } else if (i < nocc_ && q >= nocc_ && r >= nocc_ && l < nocc_) {
+                            mean_iaai += abs(J_view(i, q, r, l));
+                            x_sq_iaai += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, r, q, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_prqs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(l, q, r, i)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_sqrp = false;
+                            }
+                        } else if (i >= nocc_ && q < nocc_ && r >= nocc_ && l < nocc_) {
+                            mean_aiai += abs(J_view(i, q, r, l));
+                            x_sq_aiai += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, l, r, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_psrq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, q, i, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rqps = false;
+                            }
+                        } else if (i < nocc_ && q >= nocc_ && r < nocc_ && l >= nocc_) {
+                            mean_iaia += abs(J_view(i, q, r, l));
+                            x_sq_iaia += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, l, r, q)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_psrq = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(r, q, i, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_rqps = false;
+                            }
                         } else {
-                            mean_iiaa += abs(J_view(i, j, k, l));
-                            x_sq_iiaa += J_view(i, j, k, l) * J_view(i, j, k, l);
+                            mean_iiaa += abs(J_view(i, q, r, l));
+                            x_sq_iiaa += J_view(i, q, r, l) * J_view(i, q, r, l);
+                            if (abs(J_view(i, q, r, l) - J_view(i, q, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_pqsr = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, r, l)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qprs = false;
+                            }
+                            if (abs(J_view(i, q, r, l) - J_view(q, i, l, r)) > ((1.0e-5)*J_view(i, q, r, l))) {
+                                J_pqrs_qpsr = false;
+                            }
                         }
                     }
                 }
             }
         }
+        outfile->Printf("      J_pqrs_pqsr: %s\n", J_pqrs_pqsr ? "true" : "false");
+        outfile->Printf("      J_pqrs_psqr: %s\n", J_pqrs_psqr ? "true" : "false");
+        outfile->Printf("      J_pqrs_psrq: %s\n", J_pqrs_psrq ? "true" : "false");
+        outfile->Printf("      J_pqrs_prqs: %s\n", J_pqrs_prqs ? "true" : "false");
+        outfile->Printf("      J_pqrs_prsq: %s\n", J_pqrs_prsq ? "true" : "false");
+        outfile->Printf("      J_pqrs_qprs: %s\n", J_pqrs_qprs ? "true" : "false");
+        outfile->Printf("      J_pqrs_qpsr: %s\n", J_pqrs_qpsr ? "true" : "false");
+        outfile->Printf("      J_pqrs_qrps: %s\n", J_pqrs_qrps ? "true" : "false");
+        outfile->Printf("      J_pqrs_qrsp: %s\n", J_pqrs_qrsp ? "true" : "false");
+        outfile->Printf("      J_pqrs_qspr: %s\n", J_pqrs_qspr ? "true" : "false");
+        outfile->Printf("      J_pqrs_qsrp: %s\n", J_pqrs_qsrp ? "true" : "false");
+        outfile->Printf("      J_pqrs_rspq: %s\n", J_pqrs_rspq ? "true" : "false");
+        outfile->Printf("      J_pqrs_rsqp: %s\n", J_pqrs_rsqp ? "true" : "false");
+        outfile->Printf("      J_pqrs_rpqs: %s\n", J_pqrs_rpqs ? "true" : "false");
+        outfile->Printf("      J_pqrs_rqps: %s\n", J_pqrs_rqps ? "true" : "false");
+        outfile->Printf("      J_pqrs_rpsq: %s\n", J_pqrs_rpsq ? "true" : "false");
+        outfile->Printf("      J_pqrs_rqsp: %s\n", J_pqrs_rqsp ? "true" : "false");
+        outfile->Printf("      J_pqrs_sqpr: %s\n", J_pqrs_sqpr ? "true" : "false");
+        outfile->Printf("      J_pqrs_spqr: %s\n", J_pqrs_spqr ? "true" : "false");
+        outfile->Printf("      J_pqrs_sqrp: %s\n", J_pqrs_sqrp ? "true" : "false");
+        outfile->Printf("      J_pqrs_sprq: %s\n", J_pqrs_sprq ? "true" : "false");
+        outfile->Printf("      J_pqrs_srqp: %s\n", J_pqrs_srqp ? "true" : "false");
+        outfile->Printf("      J_pqrs_srpq: %s\n", J_pqrs_srpq ? "true" : "false");
+        
         meanValue /= nobs_ * nobs_ * nobs_ * nobs_;
         mean_iiii /= nocc_ * nocc_ * nocc_ * nocc_;
         mean_iiia /= nocc_ * nocc_ * nocc_ * nvir_;
@@ -2498,7 +2808,7 @@ double DiskCCSDF12B::compute_energy() {
         outfile->Printf("      Mean Value (aaai): %e, Standard Deviation: %e\n", mean_aaai, sqrt(x_sq_aaai - mean_aaai * mean_aaai));
         outfile->Printf("      Mean Value (aaaa): %e, Standard Deviation: %e\n", mean_aaaa, sqrt(x_sq_aaaa - mean_aaaa * mean_aaaa));
 
-        outfile->Printf("   X (from Werner 1992) Intermediate\n");
+        /*outfile->Printf("   X (from Werner 1992) Intermediate\n");
         timer_on("X (from Werner 1992) Intermediate");
         form_X_Werner(X_Werner.get(), f.get(), t_ia.get(), A.get(), r.get(), J.get(), K.get());
         meanValue = 0.0;
@@ -2649,14 +2959,15 @@ double DiskCCSDF12B::compute_energy() {
         outfile->Printf("      Mean Value (ii): %e, Standard Deviation: %e\n", mean_ii, sqrt(x_sq_ii - mean_ii * mean_ii));
         outfile->Printf("      Mean Value (ia): %e, Standard Deviation: %e\n", mean_ia, sqrt(x_sq_ia - mean_ia * mean_ia));
         outfile->Printf("      Mean Value (ai): %e, Standard Deviation: %e\n", mean_ai, sqrt(x_sq_ai - mean_ai * mean_ai));
-        outfile->Printf("      Mean Value (aa): %e, Standard Deviation: %e\n", mean_aa, sqrt(x_sq_aa - mean_aa * mean_aa));
+        outfile->Printf("      Mean Value (aa): %e, Standard Deviation: %e\n", mean_aa, sqrt(x_sq_aa - mean_aa * mean_aa));//*/
 
         outfile->Printf("   T2 Residual (V) Tensor\n");
         timer_on("T2 Residual (V) Tensor");
-        form_V_ijab(V_ijab.get(), G_ij.get(), tau.get(), D_Werner.get(), alpha.get(), C.get(), FG.get(), K.get(), F_BraBig.get());
+        //form_V_ijab(V_ijab.get(), G_ij.get(), tau.get(), D_Werner.get(), alpha.get(), C.get(), FG.get(), K.get(), F_BraBig.get());
+        form_Scuseria_Vijab(V_ijab.get(), T_ijab.get(), t_ia.get(), f.get(), J.get(), F_BraBig.get(), FG.get(), C.get());
         meanValue = 0.0;
         x_squared = 0.0;
-        DiskView<double, 4, 4> V_ijab_view{(*G_ij), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4>{nact_, nact_, nvir_, nvir_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; V_ijab_view.set_read_only(true);
+        DiskView<double, 4, 4> V_ijab_view{(*V_ijab), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4>{nact_, nact_, nvir_, nvir_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; V_ijab_view.set_read_only(true);
         for (int i = 0; i < nact_; i++) {
             for (int j = 0; j < nact_; j++) {
                 for (int a = 0; a < nvir_; a++) {
@@ -2734,7 +3045,7 @@ double DiskCCSDF12B::compute_energy() {
 
         outfile->Printf("\n ===> Computing CCSD-F12b Extra Energy Correction <===\n");
         timer_on("F12b Energy Correction");
-        form_CCSDF12B_Energy(tau.get(), t_ia.get(), FG.get(), J.get(), F_BraBig.get());
+        form_CCSDF12B_Energy(tau.get(), F_BraBig.get(), FG.get(), J.get());
         timer_off("F12b Energy Correction");
 
         // Compute the CCSD-F12b Energy
@@ -2857,9 +3168,8 @@ std::pair<double, double> DiskCCSDF12B::B_Tilde(einsums::Tensor<double, 4>& B_ij
     return {B_s, B_t};
 }
 
-void DiskCCSDF12B::form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 2> *t_ia, 
-                                      einsums::DiskTensor<double, 4> *FG, einsums::DiskTensor<double, 4> *K,
-                                      einsums::DiskTensor<double, 4> *F)
+void DiskCCSDF12B::form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 4> *F, 
+                                      einsums::DiskTensor<double, 4> *FG, einsums::DiskTensor<double, 4> *K)
 {
     using namespace einsums;
     using namespace tensor_algebra;
@@ -2868,23 +3178,20 @@ void DiskCCSDF12B::form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, ein
     E_f12b_ = 0.0;
 
     DiskView<double, 4, 4> tau_view{(*tau), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4>{nact_, nact_, nvir_, nvir_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; tau_view.set_read_only(true);
-    DiskView<double, 2, 2> t_ia_view{(*t_ia), Dim<2>{nact_, nvir_}, Count<2>{nact_, nvir_}, Offset<2>{0, 0}, Stride<2>{1, 1}}; t_ia_view.set_read_only(true);
-    auto D_ijab = std::make_unique<DiskTensor<double, 4>>(state::data(), "D_ijab", nact_, nact_, nobs_ - nfrzn_, nobs_ - nfrzn_); // D_ijab assumed as ab used in eq 9 and 10 of Alder 2007
-    form_D_Werner(D_ijab.get(), tau, t_ia);
-
     Tensor<double, 4> E_F12b_temp{"E_F12b_temp", nact_, nact_, nact_, nact_};
     
-    DiskView<double, 4, 4> D_ijab_view{(*D_ijab), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4>{nact_, nact_, nvir_, nvir_}, Offset<4>{0, 0, nact_, nact_}, Stride<4>{1, 1, 1, 1}}; D_ijab_view.set_read_only(true);
-    size_t block_size = static_cast<size_t>(std::sqrt((((memory_ * 0.25)/ double_memory_) / nobs_) / nobs_)); // Assume memory has been used elsewhere!
+    size_t block_size = static_cast<size_t>(std::sqrt((((memory_ * 0.25)/ double_memory_) / nvir_) / nvir_)); // Assume memory has been used elsewhere!
+    if (block_size > nvir_) block_size = nvir_;
     int last_block = static_cast<int>(nvir_ % block_size);
     int no_blocks = static_cast<int>((nvir_ / block_size) + 1);
+    outfile->Printf("Block Size: %d, Last Block: %d, Number of Blocks: %d\n", block_size, last_block, no_blocks);
 
 #pragma omp parallel for schedule(dynamic) collapse(2) num_threads(nthreads_)
     for (int k = 0; k < nact_; k++) {
         for (int l = 0; l < nact_; l++) {
             //outfile->Printf("Iteration %d, %d", k, l);
             Tensor <double, 2> tmp_kl{"Tmp kl", nvir_, nvir_};
-            auto F_pqoo_kl = (*F)(All, All, k, l); F_pqoo_kl.set_read_only(true);
+            auto F_pqoo_kl = (*F)(Range{nfrzn_, nobs_}, Range{nfrzn_, nobs_}, k, l); F_pqoo_kl.set_read_only(true);
             for (int a_block = 0; a_block < no_blocks; a_block++) {
                 //outfile->Printf("Block %d\n", a_block);
                 for (int b_block = 0; b_block < no_blocks; b_block++) {
@@ -2893,12 +3200,12 @@ void DiskCCSDF12B::form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, ein
                     int b_start = b_block * block_size;
                     int b_end = (b_block == no_blocks - 1) ? b_start + last_block : b_start + block_size;
 
-                    auto W_vvoo_ab = (*FG)(Range{a_start, a_end}, Range{b_start, b_end}, k, l); W_vvoo_ab.set_read_only(true);
-                    auto K_vvpq_ab = (*K)(Range{a_start, a_end}, All, Range{b_start, b_end}, All); K_vvpq_ab.set_read_only(true); // K here is not K in Werner et al. - Supplied J_pqrs
+                    auto W_vvoo_ab = (*FG)(Range{a_start + nocc_, a_end + nocc_}, Range{b_start + nocc_, b_end + nocc_}, k + nfrzn_, l + nfrzn_); W_vvoo_ab.set_read_only(true);
+                    auto K_vvpq_ab = (*K)(Range{a_start + nocc_, a_end + nocc_}, Range{b_start + nocc_, b_end + nocc_}, Range{nfrzn_, nobs_}, Range{nfrzn_, nobs_}); K_vvpq_ab.set_read_only(true); // K here is not K in Werner et al. - Supplied J_pqrs
                     auto tmp_kl_ab = tmp_kl(Range{a_start, a_end}, Range{b_start, b_end});
 
+                    einsum(0.0, Indices{a, b}, &tmp_kl_ab, -1.0, Indices{a, b, r, s}, K_vvpq_ab.get(), Indices{r, s}, F_pqoo_kl.get());
                     sort(1.0, Indices{a, b}, &tmp_kl_ab, 1.0, Indices{a, b}, W_vvoo_ab.get());
-                    einsum(1.0, Indices{a, b}, &tmp_kl_ab, -1.0, Indices{a, r, b, s}, K_vvpq_ab.get(), Indices{r, s}, F_pqoo_kl.get());
                 }
             }
             /*if (iteration_ < 2) {
@@ -2914,7 +3221,7 @@ void DiskCCSDF12B::form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, ein
                 }
             }*/
             auto E_f12b_temp_kl = E_F12b_temp(All, All, k, l);
-            einsum(1.0, Indices{i, j}, &E_f12b_temp_kl, 1.0, Indices{a, b}, tmp_kl, Indices{i, j, a, b}, D_ijab_view.get());
+            einsum(1.0, Indices{i, j}, &E_f12b_temp_kl, 1.0, Indices{a, b}, tmp_kl, Indices{j, i, a, b}, tau_view.get());
         }
     }
 
@@ -2924,7 +3231,6 @@ void DiskCCSDF12B::form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, ein
             if (i != j) E_f12b_ += T_ijkl(i, j, i, j) * E_F12b_temp(i, j, i, j);
         }
     }
-    //outfile->Printf("   CCSD-F12b Energy: %.12f\n", E_f12b_);
 }
 
 void DiskCCSDF12B::form_CCSD_Energy(einsums::DiskTensor<double, 4> *G, einsums::DiskTensor<double, 4> *V, einsums::DiskTensor<double, 4> *tau)
@@ -2940,31 +3246,45 @@ void DiskCCSDF12B::form_CCSD_Energy(einsums::DiskTensor<double, 4> *G, einsums::
     Tensor<double, 0> E_ccsd_tmp{"CCSD Energy"};
     Tensor<double, 4> tmp{"tmp", nact_, nact_, nvir_, nvir_};
     DiskView<double, 4, 4> tau_view{(*tau), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4>{nact_, nact_, nvir_, nvir_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; tau_view.set_read_only(true);
-    DiskView<double, 4, 4> G_ijab_view{(*G), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4>{nact_, nact_, nvir_, nvir_}, Offset<4>{0, 0, nocc_, nocc_}, Stride<4>{1, 1, 1, 1}}; G_ijab_view.set_read_only(true);
+    DiskView<double, 4, 4> G_ijab_view{(*G), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4>{nact_, nact_, nvir_, nvir_}, Offset<4>{nfrzn_, nfrzn_, nocc_, nocc_}, Stride<4>{1, 1, 1, 1}}; G_ijab_view.set_read_only(true);
 
     /* K_ijab -> Correct Implementation */
-    sort(1.0, Indices{i, j, a, b}, &tmp, 2.0, Indices{i, j, a, b}, tau_view.get());
+    sort(0.0, Indices{i, j, a, b}, &tmp, 2.0, Indices{i, j, a, b}, tau_view.get());
     sort(1.0, Indices{i, j, a, b}, &tmp, -1.0, Indices{j, i, a, b}, tau_view.get());
     einsum(0.0, Indices{}, &E_ccsd_tmp, 1.0, Indices{i, j, a, b}, G_ijab_view.get(), Indices{i, j, a, b}, tmp);
 
-    double energy = E_ccsd_tmp;
-    //outfile->Printf("   CCSD Energy: %.12f\n", energy);
+    // Check the CCSD Energy is Expected
+    double runnningTotal = 0.0;
+    for (int i = 0; i < nact_; i++) {
+        for (int j = 0; j < nact_; j++) {
+            for (int a = 0; a < nvir_; a++) {
+                for (int b = 0; b < nvir_; b++) {
+                    runnningTotal += G_ijab_view(i, j, a, b) * 2.0 * tau_view(i, j, a, b);
+                    runnningTotal -= G_ijab_view(i, j, a, b) * tau_view(j, i, a, b);
+                }
+            }
+        }
+    }
+    double check = E_ccsd_tmp;
+    outfile->Printf("   CCSD Energy via running total: %.12f\n", runnningTotal);
+    outfile->Printf("   CCSD Energy via einsums: %.12f\n", check);
 
     DiskView<double, 4, 4> V_view{(*V), Dim<4>{nact_, nact_, nact_, nact_}, Count<4>{nact_, nact_, nact_, nact_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}}; V_view.set_read_only(true);
     
     for (int i = 0; i < nact_; i++) {
-        for (int j = i; j < nact_; j++) {
-            E_ccsd_tmp += (2 * T_ijkl(i, j, i, j) - T_ijkl(i, j, j, i)) * V_view(i, j, i, j);
-            if (i != j) {
-                E_ccsd_tmp += (2 * T_ijkl(i, j, j, i) - T_ijkl(i, j, i, j)) * V_view(i, j, j, i);
-                E_ccsd_tmp += (2 * T_ijkl(j, i, j, i) - T_ijkl(j, i, i, j)) * V_view(j, i, j, i);
-                E_ccsd_tmp += (2 * T_ijkl(j, i, i, j) - T_ijkl(j, i, j, i)) * V_view(j, i, i, j);
+        for (int j = 0; j < nact_; j++) {
+            for (int k = 0; k < nact_; k++) {
+                for (int l = 0; l < nact_; l++) {
+                    E_ccsd_tmp += ((2 * T_ijkl(i, j, k, l)) - T_ijkl(i, j, l, k)) * V_view(i, j, k, l);
+                }
             }
+            /*if (i != j) {
+                E_ccsd_tmp += ((2 * T_ijkl(i, j, j, i)) - T_ijkl(i, j, i, j)) * V_view(i, j, j, i);
+                E_ccsd_tmp += ((2 * T_ijkl(j, i, j, i)) - T_ijkl(j, i, i, j)) * V_view(j, i, j, i);
+                E_ccsd_tmp += ((2 * T_ijkl(j, i, i, j)) - T_ijkl(j, i, j, i)) * V_view(j, i, i, j);
+            }*/
         }
     }
-
-    energy = E_ccsd_tmp;
-    //outfile->Printf("   CCSD Energy: %.12f\n", energy);
 
     E_ccsd_ = E_ccsd_tmp;
 

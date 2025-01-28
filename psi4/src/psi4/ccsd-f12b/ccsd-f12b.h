@@ -476,9 +476,18 @@ class DiskCCSDF12B : public CCSDF12B {
                              einsums::DiskTensor<double, 4> *D, einsums::DiskTensor<double, 4> *alpha, einsums::DiskTensor<double, 4> *C,
                              einsums::DiskTensor<double, 4> *FG, einsums::DiskTensor<double, 4> *K, einsums::DiskTensor<double, 4> *F);
 
+    /* Form singles residual using Scuseria 1988 without intermediates */
+    virtual void form_Scuseria_via(einsums::DiskTensor<double, 2> *v_ia, einsums::DiskTensor<double, 4> *T_ijab, einsums::DiskTensor<double, 2> *t,
+                                   einsums::DiskTensor<double, 2> *f, einsums::DiskTensor<double, 4> *G_ijab);
+
+    /* Form doubles residual (no singles terms) using Scuseria 1988 without intermediates */
+    virtual void form_Scuseria_Vijab(einsums::DiskTensor<double, 4> *V_ijab, einsums::DiskTensor<double, 4> *T_ijab, einsums::DiskTensor<double, 2> *t,
+                                     einsums::DiskTensor<double, 2> *f, einsums::DiskTensor<double, 4> *G_ijab, einsums::DiskTensor<double, 4> *F,
+                                     einsums::DiskTensor<double, 4> *FG, einsums::DiskTensor<double, 4> *C);
+
     /* Form the CCSD F12b correction to the CCSD and Hartree-Fock energy */
-    void form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 2>  *t_ia, einsums::DiskTensor<double, 4> *FG_pqrs, 
-                                einsums::DiskTensor<double, 4> *K_pqrs, einsums::DiskTensor<double, 4> *F_pqrs);
+    void form_CCSDF12B_Energy(einsums::DiskTensor<double, 4> *tau, einsums::DiskTensor<double, 4>  *F_pqrs, einsums::DiskTensor<double, 4> *FG_pqrs, 
+                                einsums::DiskTensor<double, 4> *K_pqrs);
 
     /* Form the CCSD Energy Correction to Hartree Fock (E_ccsd_) */
     void form_CCSD_Energy(einsums::DiskTensor<double, 4> *G, einsums::DiskTensor<double, 4> *V, einsums::DiskTensor<double, 4> *tau);

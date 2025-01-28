@@ -70,7 +70,7 @@ void CCSDF12B::initialise_amplitudes(einsums::Tensor<double, 2> *t_ia, einsums::
 
     // Set <ij|t|ab> to V_ijab (<ij|V|ab>) / (e_ii + e_jj - e_aa - e_bb)
     {
-        einsum(1.0, Indices{i, j, a, b}, &(*T_ijab), 1.0, Indices{i, j, a, b}, *V_ijab, Indices{i, j, a, b}, *D_ijab);
+        einsum(0.0, Indices{i, j, a, b}, &(*T_ijab), 1.0, Indices{i, j, a, b}, *V_ijab, Indices{i, j, a, b}, *D_ijab);
     }
 
 }
@@ -168,14 +168,15 @@ void DiskCCSDF12B::initialise_amplitudes(einsums::DiskTensor<double, 2> *t_ia, e
             //IJAB
             {
                 auto T_IJ = (*T_ijab)(i, j, All, All);
-                einsum(1.0, Indices{a, b}, &T_IJ.get(), 1.0, Indices{a, b}, V_IJ.get(), Indices{a, b}, D_IJ.get());
+                T_IJ.zero();
+                einsum(0.0, Indices{a, b}, &T_IJ.get(), 1.0, Indices{a, b}, V_IJ.get(), Indices{a, b}, D_IJ.get());
             }
 
             //JIAB
             if (i != j) {
                 auto T_JI = (*T_ijab)(j, i, All, All);
-                
-                einsum(1.0, Indices{a, b}, &T_JI.get(), 1.0, Indices{a, b}, V_IJ.get(), Indices{a, b}, D_IJ.get());
+                T_JI.zero();
+                einsum(0.0, Indices{a, b}, &T_JI.get(), 1.0, Indices{a, b}, V_IJ.get(), Indices{a, b}, D_IJ.get());
             }
         }
     }
@@ -183,7 +184,7 @@ void DiskCCSDF12B::initialise_amplitudes(einsums::DiskTensor<double, 2> *t_ia, e
 
 void DiskCCSDF12B::save_amplitudes(einsums::DiskTensor<double, 2> *t_ia_old, einsums::DiskTensor<double, 4> *T_ijab_old, 
                                    einsums::DiskTensor<double, 2> *t_ia, einsums::DiskTensor<double, 4> *T_ijab) {
-    // Save the amplitudes between iterations
+    // Save the amplitudes between iterations - zero old first
     using namespace einsums;
     using namespace tensor_algebra;
     using namespace tensor_algebra::index;
@@ -191,6 +192,8 @@ void DiskCCSDF12B::save_amplitudes(einsums::DiskTensor<double, 2> *t_ia_old, ein
     DiskView<double, 4, 4> T_ijab_old_view{(*T_ijab_old), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4> {nact_, nact_, nvir_, nvir_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}};
     DiskView<double, 2, 2> t_ia_view{(*t_ia), Dim<2>{nact_, nvir_}, Count<2> {nact_, nvir_}, Offset<2>{0, 0}, Stride<2>{1, 1}};
     DiskView<double, 4, 4> T_ijab_view{(*T_ijab), Dim<4>{nact_, nact_, nvir_, nvir_}, Count<4> {nact_, nact_, nvir_, nvir_}, Offset<4>{0, 0, 0, 0}, Stride<4>{1, 1, 1, 1}};
+    t_ia_old_view.zero();
+    T_ijab_old_view.zero();
     sort(0.0, Indices{i, a}, &t_ia_old_view.get(), 1.0, Indices{i, a}, t_ia_view.get());
     sort(0.0, Indices{i, j, a, b}, &T_ijab_old_view.get(), 1.0, Indices{i, j, a, b}, T_ijab_view.get());
 }
@@ -228,7 +231,7 @@ void DiskCCSDF12B::update_t2(einsums::DiskTensor<double, 4> *T_ijab, einsums::Di
             //IJAB
             {
                 auto T_IJ = (*T_ijab)(i, j, All, All);
-                einsum(1.0, Indices{a, b}, &T_IJ.get(), 1.0, Indices{a, b}, V_IJ.get(), Indices{a, b}, D_IJ.get());
+                einsum(1.0, Indices{a, b}, &T_IJ.get(), -1.0, Indices{a, b}, V_IJ.get(), Indices{a, b}, D_IJ.get());
                 /*if (iteration_ < 2) {
                     for (int b = 0; b < nvir_; b++) {
                         outfile->Printf("T(%d, %d, %d, %d): %e, ", i, j, 5, b, T_IJ(5, b));
@@ -239,7 +242,7 @@ void DiskCCSDF12B::update_t2(einsums::DiskTensor<double, 4> *T_ijab, einsums::Di
             //JIAB
             if (i != j) {
                 auto T_JI = (*T_ijab)(j, i, All, All);
-                einsum(1.0, Indices{a, b}, &T_JI.get(), 1.0, Indices{a, b}, V_IJ.get(), Indices{a, b}, D_IJ.get());
+                einsum(1.0, Indices{a, b}, &T_JI.get(), -1.0, Indices{a, b}, V_IJ.get(), Indices{a, b}, D_IJ.get());
             }
         }
     }
@@ -263,6 +266,7 @@ void DiskCCSDF12B::form_tau(einsums::DiskTensor<double, 4> *tau, einsums::DiskTe
             //IJAB
             {
                 auto tau_IJ = (*tau)(I, J, All, All);
+                tau_IJ.zero();
                 //outfile->Printf("tau_IJ: %f\n", tau_IJ(0, 0));
                 sort(0.0, Indices{a, b}, &tau_IJ.get(), 1.0, Indices{a, b}, T_IJ.get());
                 //outfile->Printf("tau_IJ: %f\n", tau_IJ(0, 0));
@@ -273,6 +277,7 @@ void DiskCCSDF12B::form_tau(einsums::DiskTensor<double, 4> *tau, einsums::DiskTe
             //JIAB
             if (I != J) {
                 auto tau_JI = (*tau)(J, I, All, All);
+                tau_JI.zero();
                 sort(0.0, Indices{a, b}, &tau_JI.get(), 1.0, Indices{a, b}, T_IJ.get());
                 einsum(1.0, Indices{a, b}, &tau_JI.get(), 1.0, Indices{a}, t_J.get(), Indices{b}, t_I.get());
             }
@@ -295,6 +300,7 @@ void DiskCCSDF12B::form_taut(einsums::DiskTensor<double, 4> *taut, einsums::Disk
             //IJAB
             {
                 auto taut_IJ = (*taut)(I, J, All, All);
+                taut_IJ.zero();
                 sort(0.0, Indices{a, b}, &taut_IJ.get(), 0.5, Indices{a, b}, T_IJ.get());
                 einsum(1.0, Indices{a, b}, &taut_IJ.get(), 1.0, Indices{a}, t_I.get(), Indices{b}, t_J.get());
             }
@@ -302,6 +308,7 @@ void DiskCCSDF12B::form_taut(einsums::DiskTensor<double, 4> *taut, einsums::Disk
             //JIAB
             if (I != J) {
                 auto taut_JI = (*taut)(J, I, All, All);
+                taut_JI.zero();
                 sort(0.0, Indices{a, b}, &taut_JI.get(), 0.5, Indices{a, b}, T_IJ.get());
                 einsum(1.0, Indices{a, b}, &taut_JI.get(), 1.0, Indices{a}, t_J.get(), Indices{b}, t_I.get());
             }
