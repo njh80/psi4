@@ -2733,28 +2733,13 @@ double DiskCCSDF12B::compute_energy() {
             }
         }
         outfile->Printf("      J_pqrs_pqsr: %s\n", J_pqrs_pqsr ? "true" : "false");
-        outfile->Printf("      J_pqrs_psqr: %s\n", J_pqrs_psqr ? "true" : "false");
         outfile->Printf("      J_pqrs_psrq: %s\n", J_pqrs_psrq ? "true" : "false");
         outfile->Printf("      J_pqrs_prqs: %s\n", J_pqrs_prqs ? "true" : "false");
-        outfile->Printf("      J_pqrs_prsq: %s\n", J_pqrs_prsq ? "true" : "false");
         outfile->Printf("      J_pqrs_qprs: %s\n", J_pqrs_qprs ? "true" : "false");
         outfile->Printf("      J_pqrs_qpsr: %s\n", J_pqrs_qpsr ? "true" : "false");
-        outfile->Printf("      J_pqrs_qrps: %s\n", J_pqrs_qrps ? "true" : "false");
-        outfile->Printf("      J_pqrs_qrsp: %s\n", J_pqrs_qrsp ? "true" : "false");
-        outfile->Printf("      J_pqrs_qspr: %s\n", J_pqrs_qspr ? "true" : "false");
-        outfile->Printf("      J_pqrs_qsrp: %s\n", J_pqrs_qsrp ? "true" : "false");
         outfile->Printf("      J_pqrs_rspq: %s\n", J_pqrs_rspq ? "true" : "false");
-        outfile->Printf("      J_pqrs_rsqp: %s\n", J_pqrs_rsqp ? "true" : "false");
-        outfile->Printf("      J_pqrs_rpqs: %s\n", J_pqrs_rpqs ? "true" : "false");
         outfile->Printf("      J_pqrs_rqps: %s\n", J_pqrs_rqps ? "true" : "false");
-        outfile->Printf("      J_pqrs_rpsq: %s\n", J_pqrs_rpsq ? "true" : "false");
-        outfile->Printf("      J_pqrs_rqsp: %s\n", J_pqrs_rqsp ? "true" : "false");
-        outfile->Printf("      J_pqrs_sqpr: %s\n", J_pqrs_sqpr ? "true" : "false");
-        outfile->Printf("      J_pqrs_spqr: %s\n", J_pqrs_spqr ? "true" : "false");
         outfile->Printf("      J_pqrs_sqrp: %s\n", J_pqrs_sqrp ? "true" : "false");
-        outfile->Printf("      J_pqrs_sprq: %s\n", J_pqrs_sprq ? "true" : "false");
-        outfile->Printf("      J_pqrs_srqp: %s\n", J_pqrs_srqp ? "true" : "false");
-        outfile->Printf("      J_pqrs_srpq: %s\n", J_pqrs_srpq ? "true" : "false");
         
         meanValue /= nobs_ * nobs_ * nobs_ * nobs_;
         mean_iiii /= nocc_ * nocc_ * nocc_ * nocc_;
